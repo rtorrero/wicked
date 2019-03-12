@@ -1096,8 +1096,8 @@ __ni_process_ifinfomsg_ovs_type(ni_iftype_t *type, const char *ifname, ni_netcon
 	if (ni_netconfig_discover_filtered(nc, NI_NETCONFIG_DISCOVER_LINK_EXTERN))
 		return;
 
-	if (ni_ovs_vsctl_bridge_exists(ifname) == 0)
-		*type = NI_IFTYPE_OVS_BRIDGE;
+	/*if (ni_ovs_vsctl_bridge_exists(ifname) == 0)
+		*type = NI_IFTYPE_OVS_BRIDGE;*/
 }
 
 static void
@@ -1904,7 +1904,7 @@ __ni_netdev_process_newlink(ni_netdev_t *dev, struct nlmsghdr *h,
 		if (rv == -NI_ERROR_RADIO_DISABLED) {
 			ni_debug_ifconfig("%s: radio disabled, not refreshing wireless info", dev->name);
 			ni_netdev_set_wireless(dev, NULL);
-		} else 
+		} else
 		if (rv < 0)
 			ni_error("%s: failed to refresh wireless info", dev->name);
 		break;
