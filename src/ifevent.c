@@ -133,6 +133,9 @@ int
 __ni_rtevent_process(ni_netconfig_t *nc, const struct sockaddr_nl *nladdr, struct nlmsghdr *h)
 {
 	int rv;
+	struct timeval start, end, delta;
+	const char *rtnl_name;
+
 #if 0
 	const char *rtnl_name;
 
@@ -141,6 +144,8 @@ __ni_rtevent_process(ni_netconfig_t *nc, const struct sockaddr_nl *nladdr, struc
 	else
 		ni_debug_events("received rtnetlink event %u", h->nlmsg_type);
 #endif
+
+	ni_timer_get_time(&start);
 
 	switch (h->nlmsg_type) {
 	case RTM_NEWLINK:
@@ -190,6 +195,15 @@ __ni_rtevent_process(ni_netconfig_t *nc, const struct sockaddr_nl *nladdr, struc
 		rv = 0;
 	}
 
+	ni_timer_get_time(&end);
+	if (timercmp(&end, &start, >))
+		timersub(&end, &start, &delta);
+	else
+		timerclear(&delta);
+
+	rtnl_name = ni_rtnl_msg_type_to_name(h->nlmsg_type, NULL);
+
+	ni_debug_events("%s event took [%ldm%ld.%03lds]",  rtnl_name, delta.tv_sec / 60, delta.tv_sec % 60, delta.tv_usec / 1000);
 	return rv;
 }
 
@@ -1446,4 +1460,3 @@ ni_server_deactivate_interface_events(void)
 	ni_global.interface_addr_event = NULL;
 	ni_global.interface_prefix_event = NULL;
 }
-
