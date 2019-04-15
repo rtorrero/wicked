@@ -36,6 +36,7 @@
 
 static int		__ni_pidfile_write(const char *, unsigned int, pid_t, int);
 static const char *	__ni_build_backup_path(const char *, const char *);
+static const char *	__scandir_filter;
 
 void
 ni_string_array_init(ni_string_array_t *nsa)
@@ -989,6 +990,79 @@ out:
 	closedir(dir);
 	free(copy);
 	return rv;
+}
+
+int
+ni_scandir_filter(const struct dirent *dir)
+{
+	if (__scandir_filter) {
+		char *s;
+		const char *name = dir->d_name;
+		unsigned int pfxlen, sfxlen;
+		const char *match_prefix = NULL;
+		const char *match_suffix = NULL;
+		char *copy = NULL;
+
+		copy = xstrdup(__scandir_filter);
+		if ((s = strchr(copy, '*')) == NULL) {
+			ni_error("%s: bad pattern \"%s\"", __func__, __scandir_filter);
+			return 0;
+		}
+		if (s != copy)
+			match_prefix = copy;
+		*s++ = '\0';
+		if (*s != '\0')
+			match_suffix = s;
+
+		pfxlen = match_prefix? strlen(match_prefix) : 0;
+		sfxlen = match_suffix? strlen(match_suffix) : 0;
+		if (name[0] == '.')
+			return 0;
+		if (pfxlen && strncmp(name, match_prefix, pfxlen))
+			return 0;
+		if (sfxlen != 0) {
+			unsigned int namelen = strlen(name);
+
+			if (namelen < pfxlen + sfxlen)
+				return 0;
+			if (strcmp(name + namelen - sfxlen, match_suffix))
+				return 0;
+		}
+
+		return 1;
+	} else {
+		return 0;
+	}
+}
+/*
+ * Scan directory and return all file names matching the given prefix
+ * in alphabetic order
+ */
+int
+ni_scandir_alt(const char *dirname, const char *pattern, ni_string_array_t *res)
+{
+	struct dirent **namelist;
+	const char *name;
+        int n, i;
+
+	__scandir_filter = pattern;
+        n = scandir(dirname, &namelist, ni_scandir_filter, alphasort);
+        if (n < 0) {
+		ni_debug_readwrite("Unable to open directory '%s': %m",
+				dirname);
+		return 0;
+        } else {
+                for (i=0; i<n; i++) {
+                        printf("%s\n", namelist[i]->d_name);
+			name = xstrdup(namelist[i]->d_name);
+			ni_string_array_append(res, name);
+                        free(namelist[i]);
+                }
+
+                free(namelist);
+        }
+
+	return n;
 }
 
 /*

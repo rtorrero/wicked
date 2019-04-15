@@ -188,6 +188,7 @@ extern const char *	ni_realpath(const char *path, char **resolved);
 extern const char *	ni_sibling_path(const char *path, const char *file);
 extern const char *	ni_sibling_path_printf(const char *path, const char *fmt, ...);
 extern int		ni_scandir(const char *, const char *, ni_string_array_t *);
+extern int		ni_scandir_alt(const char *, const char *, ni_string_array_t *);
 extern int		ni_daemonize(const char *, unsigned int, ni_daemon_close_t);
 extern pid_t		ni_pidfile_check(const char *);
 extern int		ni_pidfile_write(const char *, unsigned int, pid_t);

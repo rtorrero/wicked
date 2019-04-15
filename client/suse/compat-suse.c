@@ -354,7 +354,7 @@ __ni_suse_read_global_ifsysctl(const char *root, const char *path)
 		if (!ni_isdir(dirname))
 			continue;
 
-		if (ni_scandir(dirname, "*"__NI_SUSE_SYSCTL_SUFFIX, &names)) {
+		if (ni_scandir_alt(dirname, "*"__NI_SUSE_SYSCTL_SUFFIX, &names)) {
 			for (i = 0; i < names.count; ++i) {
 				snprintf(pathbuf, sizeof(pathbuf), "%s/%s",
 						dirname, names.data[i]);
