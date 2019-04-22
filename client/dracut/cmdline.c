@@ -49,9 +49,11 @@
  * FIXME: This static function is already defined in sysconfig.c,
  * move it to util.c and use it from there
  */
-
 static ni_bool_t unquote(char *);
 static char * __ni_suse_default_hostname;
+
+//FIXME: Like described below, this is duplicated, move this to a common place for both compat-suse.c and cmdline.c
+const char * ni_compat_read_default_hostname(const char *root, char **hostname);
 
 ni_compat_netdev_t *
 ni_cmdlineconfig_new_compat_netdev(const char *filename)
@@ -688,4 +690,46 @@ unquote(char *string)
 
 	*dst = '\0';
 	return ret;
+}
+
+/**
+ * FIXME: this is a copy from __ni_suse_read_default_hostname
+ * in compat-suse.c. Find a generic way of defining this function
+ */
+/** get default hostname from the system */
+const char *
+ni_compat_read_default_hostname(const char *root, char **hostname)
+{
+	const char *filenames[] = {
+		"/etc/hostname",
+		"/etc/HOSTNAME",
+		NULL
+	}, **name;
+	char filename[PATH_MAX];
+	char buff[256] = {'\0'};
+	FILE *input;
+
+	if (!hostname)
+		return NULL;
+	ni_string_free(hostname);
+
+	for (name = filenames; name && !ni_string_empty(*name); name++) {
+		snprintf(filename, sizeof(filename), "%s%s", root, *name);
+
+		if (!ni_isreg(filename))
+			continue;
+
+		if (!(input = ni_file_open(filename, "r", 0600)))
+			continue;
+
+		if (fgets(buff, sizeof(buff)-1, input)) {
+			buff[strcspn(buff, " \t\r\n")] = '\0';
+
+			if (ni_check_domain_name(buff, strlen(buff), 0))
+				ni_string_dup(hostname, buff);
+		}
+		fclose(input);
+		break;
+	}
+	return *hostname;
 }
