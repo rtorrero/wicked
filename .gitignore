@@ -10,6 +10,7 @@
 *.diff
 *.patch
 .*
+!.gitlab-ci.yml
 compile
 core
 cscope.*

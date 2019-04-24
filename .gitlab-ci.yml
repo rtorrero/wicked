@@ -1,0 +1,8 @@
+image: registry.opensuse.org/home/rtorrero/branches/opensuse/templates/images/15.0/containers/wicked_builder_leap_15.0
+
+build:
+  stage: build
+  script:
+    - make clean || true
+    - ./autogen.sh
+    - make rpmbuild
