@@ -6,3 +6,4 @@ build:
     - make clean || true
     - ./autogen.sh
     - make rpmbuild
+    - ocs status
