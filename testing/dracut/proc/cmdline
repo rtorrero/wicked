@@ -1,1 +1,1 @@
-BOOT_IMAGE=/boot/vmlinuz-5.1.2-1-default root=UUID=759ecc5e-7b05-11e9-8f9e-2a86e4085a59 ip=eth0:dhcp
+BOOT_IMAGE=/boot/vmlinuz-5.1.2-1-default root=UUID=759ecc5e-7b05-11e9-8f9e-2a86e4085a59 ip=eth9:dhcp
