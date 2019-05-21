@@ -30,6 +30,7 @@
 extern unsigned int ni_wait_for_interfaces;
 
 extern int		ni_do_ifup(int argc, char **argv);
+extern int              ni_do_bootstrap(int argc, char **argv);
 extern ni_bool_t	ni_ifup_hire_nanny(ni_ifworker_array_t *, ni_bool_t);
 
 #endif /* __WICKED_CLIENT_IFUP_H__ */

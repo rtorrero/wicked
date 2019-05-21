@@ -330,6 +330,9 @@ main(int argc, char **argv)
 	} else
 	if (!strcmp(cmd, "ethtool")) {
 		status = ni_do_ethtool(program, argc - optind, argv + optind);
+	} else
+	if (!strcmp(cmd, "bootstrap")) {
+		status = ni_do_bootstrap(argc - optind, argv + optind);
 	} else {
 		fprintf(stderr, "Unsupported command %s\n", cmd);
 		goto usage;
