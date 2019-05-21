@@ -986,27 +986,13 @@ ni_do_ifup(int argc, char **argv)
 int
 ni_do_bootstrap(int argc, char **argv)
 {
-	enum  { OPT_HELP, OPT_IFCONFIG, OPT_CONTROL_MODE, OPT_STAGE, OPT_TIMEOUT,
-		OPT_SKIP_ACTIVE, OPT_SKIP_ORIGIN, OPT_PERSISTENT, OPT_TRANSIENT,
-#ifdef NI_TEST_HACKS
-		OPT_IGNORE_PRIO, OPT_IGNORE_STARTMODE,
-#endif
-	};
+	enum  { OPT_HELP, OPT_IFCONFIG, OPT_TIMEOUT, OPT_TRANSIENT };
 
 	static struct option ifup_options[] = {
 		{ "help",	no_argument,       NULL,	OPT_HELP },
 		{ "ifconfig",	required_argument, NULL,	OPT_IFCONFIG },
-		{ "mode",	required_argument, NULL,	OPT_CONTROL_MODE },
-		{ "boot-stage",	required_argument, NULL,	OPT_STAGE },
-		{ "skip-active",required_argument, NULL,	OPT_SKIP_ACTIVE },
-		{ "skip-origin",required_argument, NULL,	OPT_SKIP_ORIGIN },
 		{ "timeout",	required_argument, NULL,	OPT_TIMEOUT },
 		{ "transient", 	no_argument,		NULL,	OPT_TRANSIENT },
-#ifdef NI_TEST_HACKS
-		{ "ignore-prio",no_argument, NULL,	OPT_IGNORE_PRIO },
-		{ "ignore-startmode",no_argument, NULL,	OPT_IGNORE_STARTMODE },
-#endif
-		{ "persistent",	no_argument, NULL,	OPT_PERSISTENT },
 		{ NULL }
 	};
 
@@ -1062,14 +1048,6 @@ ni_do_bootstrap(int argc, char **argv)
 			ni_string_array_append(&opt_ifconfig, optarg);
 			break;
 
-		case OPT_CONTROL_MODE:
-			ifmatch.mode = optarg;
-			break;
-
-		case OPT_STAGE:
-			ifmatch.boot_stage= optarg;
-			break;
-
 		case OPT_TIMEOUT:
 			if (!strcmp(optarg, "infinite")) {
 				timeout = NI_IFWORKER_INFINITE_TIMEOUT;
@@ -1079,28 +1057,6 @@ ni_do_bootstrap(int argc, char **argv)
 				ni_error("ifup: cannot parse timeout option \"%s\"", optarg);
 				goto usage;
 			}
-			break;
-
-		case OPT_SKIP_ORIGIN:
-			ifmatch.skip_origin = optarg;
-			break;
-
-		case OPT_SKIP_ACTIVE:
-			ifmatch.skip_active = TRUE;
-			break;
-
-#ifdef NI_TEST_HACKS
-		case OPT_IGNORE_PRIO:
-			check_prio = FALSE;
-			break;
-
-		case OPT_IGNORE_STARTMODE:
-			ifmatch.ignore_startmode = TRUE;
-			break;
-#endif
-
-		case OPT_PERSISTENT:
-			ifmarker.persistent = TRUE;
 			break;
 
 		case OPT_TRANSIENT:
@@ -1119,26 +1075,8 @@ usage:
 				"      Enable transient interface return codes\n"
 				"  --ifconfig <pathname>\n"
 				"      Read interface configuration(s) from file/directory rather than using system config\n"
-				"  --mode <label>\n"
-				"      Only touch interfaces with matching control <mode>\n"
-				"  --boot-stage <label>\n"
-				"      Only touch interfaces with matching <boot-stage>\n"
-				"  --skip-active\n"
-				"      Do not touch running interfaces\n"
-				"  --skip-origin <name>\n"
-				"      Skip interfaces that have a configuration origin of <name>\n"
-				"      Usually, you would use this with the name \"firmware\" to avoid\n"
-				"      touching interfaces that have been set up via firmware (like iBFT) previously\n"
 				"  --timeout <sec>\n"
 				"      Timeout after <sec> seconds\n"
-#ifdef NI_TEST_HACKS
-				"  --ignore-prio\n"
-				"      Ignore checking the config origin priorities\n"
-				"  --ignore-startmode\n"
-				"      Ignore checking the STARTMODE=off and STARTMODE=manual configs\n"
-#endif
-				"  --persistent\n"
-				"      Set interface into persistent mode (no regular ifdown allowed)\n"
 				);
 			goto cleanup;
 		}
@@ -1178,24 +1116,6 @@ usage:
 		status = NI_WICKED_RC_NOT_CONFIGURED;
 		goto cleanup;
 	}
-
-	/* Set timeout how long the action is allowed to wait */
-	if (timeout) {
-		fsm->worker_timeout = timeout; /* One set by user */
-	} else
-	if (ni_wait_for_interfaces) {
-		fsm->worker_timeout = ni_fsm_find_max_timeout(fsm,
-				ni_wait_for_interfaces*1000);
-	} else {
-		fsm->worker_timeout = ni_fsm_find_max_timeout(fsm,
-				NI_IFWORKER_DEFAULT_TIMEOUT);
-	}
-
-	if (fsm->worker_timeout == NI_IFWORKER_INFINITE_TIMEOUT)
-		ni_debug_application("wait for interfaces infinitely");
-	else
-		ni_debug_application("wait %u seconds for interfaces",
-					fsm->worker_timeout/1000);
 
 	if (ni_fsm_build_hierarchy(fsm, TRUE) < 0) {
 		ni_error("ifup: unable to build device hierarchy");
