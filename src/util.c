@@ -1323,6 +1323,18 @@ ni_string_toupper(char *str)
 		str[i] = toupper(str[i]);
 }
 
+int
+ni_string_count_char(char *str, char *c)
+{
+	int i, count;
+
+	for (i=0, count=0; str[i]; i++) {
+		count += (str[i] == *c);
+	}
+
+	return count;
+}
+
 char *
 ni_sprint_hex(const unsigned char *data, size_t len)
 {

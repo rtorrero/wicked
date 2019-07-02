@@ -395,6 +395,7 @@ extern ni_bool_t	ni_string_ishex(const char *);
 extern int		ni_string_remove_char(char *, int);
 extern void		ni_string_tolower(char *);
 extern void		ni_string_toupper(char *);
+extern int		ni_string_count_char(char *str, char *c);
 
 extern char *		ni_sprint_hex(const unsigned char *, size_t);
 extern const char *	ni_sprint_uint(unsigned int);
