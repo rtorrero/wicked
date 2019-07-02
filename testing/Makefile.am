@@ -11,6 +11,7 @@ noinst_PROGRAMS			= rtnl-test	\
 				  teamd-test	\
 				  xpath-test	\
 				  essid-test	\
+				  dracut-test	\
 				  cstate-test
 
 AM_CPPFLAGS			= -I$(top_srcdir)/src	\
@@ -33,6 +34,7 @@ teamd_test_SOURCES		= teamd-test.c
 xpath_test_SOURCES		= xpath-test.c
 essid_test_SOURCES		= essid-test.c
 cstate_test_SOURCES		= cstate-test.c
+dracut_test_SOURCES		= dracut-test.c
 
 EXTRA_DIST			= ibft xpath
 
