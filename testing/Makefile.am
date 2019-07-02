@@ -19,7 +19,8 @@ AM_CPPFLAGS			= -I$(top_srcdir)/src	\
 
 AM_CFLAGS			= $(LIBNL_CFLAGS)	\
 				  $(LIBDBUS_CFLAGS)	\
-				  $(LIBGCRYPT_CFLAGS)
+				  $(LIBGCRYPT_CFLAGS)	\
+				  -g -O0
 
 AM_LDFLAGS			= -rdynamic
 LDADD				= $(top_builddir)/src/libwicked.la
