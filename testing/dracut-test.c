@@ -7,96 +7,137 @@
 #include <limits.h>
 #include <unistd.h>
 #include <ctype.h>
+
 #include <wicked/types.h>
 #include <wicked/util.h>
 
-/** unquoute: this is taken from sysconfig.c,
- * find a place to put it
+#include "buffer.h"
+
+#if 0
+#include "client/dracut/cmdline.c"
+#endif
+
+/**
+ * parse 'ip="foo bar" blub=hoho' lines with key[=<quoted-value|value>]
+ * @return <0 on error, 0 when param extracted, >0 to skip/ignore (crap or empty param)
  */
-static ni_bool_t
-unquote(char *string)
+static int
+ni_dracut_cmdline_param_parse_and_unquote(ni_stringbuf_t *param, ni_buffer_t *buf)
 {
-	char quote_sign = 0;
-	char *src, *dst, cc, lc = 0;
-	ni_bool_t ret = TRUE;
+	int quote = 0, esc = 0, parse = 0, cc;
 
-	if (!string)
-		return ret;
+	while ((cc = ni_buffer_getc(buf)) != EOF) {
+		if (parse) {
+			if (quote) {
+				if (esc) {
+					/* only \" for now */
+					ni_stringbuf_putc(param, cc);
+					esc = 0;
+				} else
+				if (cc == '\\') {
+					esc = cc;
+				} else
+				if (cc == quote)
+					quote = 0;
+				else
+					ni_stringbuf_putc(param, cc);
+			} else {
+				if (cc == '\'')
+					quote = cc;
+				else
+				if (cc == '"')
+					quote = cc;
+				else
+				if (isspace((unsigned int)cc))
+					return FALSE;
+				else
+					ni_stringbuf_putc(param, cc);
+			}
+		} else {
+			/* skip spaces before/after */
+			if (isspace((unsigned int)cc))
+				continue;
 
-	ret = TRUE;
-	src = dst = string;
-	if (*string == '"' || *string == '\'') {
-		quote_sign = *string;
-		src++;
-	}
-	do {
-		cc = *src;
-		if (!cc) {
-			ret = quote_sign && lc == quote_sign;
-			break;
+			parse = 1;
+			ni_stringbuf_putc(param, cc);
 		}
-		if (isspace(cc) && !quote_sign)
-			break;
-		if (cc == quote_sign)
-			break;
-		*dst = lc = cc;
-		dst++;
-		src++;
-	} while (1);
-
-	*dst = '\0';
-	return ret;
-}
-
-/**
- * Return a pointer to the first non-whitespace char in the line
- */
-static char *
-ni_dracut_cmdline_cleanup_line(ni_stringbuf_t *line)
-{
-	char *start = line->string;
-	int i;
-
-	for (i = 0; i < (int)line->len; ++i) {
-		if (isspace(*start))
-			++start;
-		else
-			break;
 	}
 
-
-	return start;
+	return param->len == 0;
 }
 
-/**
- * Takes a line and extracts to a ni_string_array all the variables
- */
-static char *
-ni_dracut_cmdline_from_line(ni_string_array_t *cmdline, const ni_string_array_t *lines)
+#if 0
+static ni_bool_t
+ni_dracut_cmdline_line_parse(ni_string_array_t *params, ni_stringbuf_t *line)
 {
-	int i;
-	char *sp;
+	ni_stringbuf_t param = NI_STRINGBUF_INIT_DYNAMIC;
+	ni_buffer_t buf;
+	int ret;
 
-	for (i = 0; i < lines->count; ++i) {
-		sp = lines->data[i];
-		printf("quote appears %d times\n", ni_string_count_char(lines->data[i], "\""));
-		/*`while (*sp != '\n' && *sp != '\0') {
+	if (!params || !line)
+		return FALSE;
 
-		}*/
+	if (ni_string_empty(line->string))
+		return TRUE;
+
+	ni_buffer_init_reader(&buf, line->string, line->len);
+	while (!(ret = ni_dracut_cmdline_param_parse_and_unquote(&param, &buf))) {
+		if (ni_string_empty(param.string))
+			continue;
+		ni_string_array_append(params, param.string);
+		ni_stringbuf_clear(&param);
 	}
+	ni_stringbuf_destroy(&param);
+
+	return ret != -1;
 }
+#endif
 
 static ni_bool_t
-ni_dracut_cmdline_from_file(ni_string_array_t *lines, const char *filename)
+ni_dracut_cmdline_line_parse_va(ni_var_array_t *params, ni_stringbuf_t *line)
+{
+	ni_stringbuf_t param = NI_STRINGBUF_INIT_DYNAMIC;
+	char *name;
+	char *value;
+	ni_buffer_t buf;
+	int ret;
+
+	if (!params || !line)
+		return FALSE;
+
+	if (ni_string_empty(line->string))
+		return TRUE;
+
+	ni_buffer_init_reader(&buf, line->string, line->len);
+	while (!(ret = ni_dracut_cmdline_param_parse_and_unquote(&param, &buf))) {
+		if (ni_string_empty(param.string))
+			continue;
+		name = xstrdup(param.string);
+		value = strchr(name, '=');
+		if (*value != '\0') {
+			*value = '\0';
+			++value;
+		} else {
+			value = NULL;
+		}
+		ni_var_array_append(params, name, value);
+		ni_stringbuf_clear(&param);
+	}
+	ni_stringbuf_destroy(&param);
+
+	return ret != -1;
+}
+
+#if 0
+static ni_bool_t
+ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *filename)
 {
 	ni_stringbuf_t line = NI_STRINGBUF_INIT_DYNAMIC;
-	ni_string_array_t cmdline = NI_STRING_ARRAY_INIT;
 	char buf[BUFSIZ], eol;
-	char *start = NULL;
 	size_t len;
 	FILE *file;
 
-	if (!lines || ni_string_empty(filename))
+	if (!params || ni_string_empty(filename))
 		return FALSE;
 
 	if (!(file = fopen(filename, "r")))
@@ -108,18 +149,62 @@ ni_dracut_cmdline_from_file(ni_string_array_t *lines, const char *filename)
 		eol = buf[len];
 		buf[len] = '\0';
 
-		if (len)
+		if (len) {
+			fprintf(stdout, "fgets returned %zu bytes data: >%s<\n", len, buf);
 			ni_stringbuf_puts(&line, buf);
+		}
 		if (eol) {
-			//start = ni_dracut_cmdline_cleanup_line(&line);
-			//ni_string_array_append(lines, start);
-
-			// Alternative
-			ni_stringbuf_trim_head(&line, " ");
-			ni_string_array_append(lines, line.string);
-			ni_dracut_cmdline_from_line(&cmdline, lines);
+			ni_dracut_cmdline_line_parse(params, &line);
 			ni_stringbuf_clear(&line);
 		}
+	}
+
+	/* EOF while reading line with missing EOL termination */
+	if (line.len) {
+		ni_dracut_cmdline_line_parse(params, &line);
+		ni_stringbuf_clear(&line);
+	}
+
+	ni_stringbuf_destroy(&line);
+	fclose(file);
+	return TRUE;
+}
+#endif
+
+static ni_bool_t
+ni_dracut_cmdline_file_parse_va(ni_var_array_t *params, const char *filename)
+{
+	ni_stringbuf_t line = NI_STRINGBUF_INIT_DYNAMIC;
+	char buf[BUFSIZ], eol;
+	size_t len;
+	FILE *file;
+
+	if (!params || ni_string_empty(filename))
+		return FALSE;
+
+	if (!(file = fopen(filename, "r")))
+		return FALSE;
+
+	memset(&buf, 0, sizeof(buf));
+	while (fgets(buf, sizeof(buf), file)) {
+		len = strcspn(buf, "\r\n");
+		eol = buf[len];
+		buf[len] = '\0';
+
+		if (len) {
+			fprintf(stdout, "fgets returned %zu bytes data: >%s<\n", len, buf);
+			ni_stringbuf_puts(&line, buf);
+		}
+		if (eol) {
+			ni_dracut_cmdline_line_parse_va(params, &line);
+			ni_stringbuf_clear(&line);
+		}
+	}
+
+	/* EOF while reading line with missing EOL termination */
+	if (line.len) {
+		ni_dracut_cmdline_line_parse_va(params, &line);
+		ni_stringbuf_clear(&line);
 	}
 
 	ni_stringbuf_destroy(&line);
@@ -127,53 +212,73 @@ ni_dracut_cmdline_from_file(ni_string_array_t *lines, const char *filename)
 	return TRUE;
 }
 
-
-static ni_bool_t
-ni_dracut_cmdline_parse_ip(char *value)
+ni_bool_t
+ni_dracut_is_same_key(const ni_var_t *var1, const ni_var_t *var2)
 {
-	return TRUE;
+	return (strcmp(var1->name, var2->name) == 0);
 }
 
-static char *
-ni_dracut_cmdline_cleanup(char *line) {
-	unquote(line);
-	return line;
+unsigned int
+ni_dracut_cmdline_extract_param()
+{
+
 }
 
 static ni_bool_t
-ni_dracut_cmdline_parse(const ni_string_array_t *lines)
+ni_dracut_cmdline_parse(const ni_var_array_t *params)
 {
-	unsigned int i;
-	const char *value = NULL, *line = NULL;
-	if (!lines)
+	unsigned int i, pos;
+	const char *valid_params[] = {
+		"ifname",
+		"vlan",
+		"bond",
+		"bridge",
+		"ip",
+		NULL
+	};
+
+	const char **ptr;
+
+	if (!params)
 		return FALSE;
 
-	for (i = 0; i < lines->count; ++i) {
-
-		line = ni_dracut_cmdline_cleanup(lines->data[i]);
-
-		printf(">>>%s<<<\n", lines->data[i]);
-		if (ni_string_startswith(lines->data[i], "ip=")) {
-			value = ni_string_strip_prefix("ip=", lines->data[i]);
-			printf("ip line value: %s \n", value);
+	// Extract all known params
+	for (ptr = valid_params; *ptr; ++ptr) {
+		const ni_var_t var = { .name = *ptr, .value = NULL };
+		//pos = ni_var_array_find(params, 0, &(ni_var_t) {*ptr, ""}, &ni_dracut_is_same_key, NULL);
+		for (pos = 0; (pos = ni_var_array_find(params, pos, &var, &ni_dracut_is_same_key, NULL)) != -1U; ++ptr) {
+			printf("%s is %s \n", *ptr, params->data[pos].value);
+			ni_var_array_remove_at(params, pos);
+			pos = ni_var_array_find(params, 0, &(ni_var_t) {*ptr, ""}, &ni_dracut_is_same_key, NULL);
 		}
-		/*
-		off = strcspn(line, "=");
-		key = line;
-		if (line[off])
-			val = line + off;
-		else
-			val = NULL;
-		key[off] = '\0';
-
-		-> passe_key_value(&key, &val, line);
-
-		{ .name = "ip", .func = ni_dracut_cmdline_parse_ip }
-		if (ni_string_eq("ip", key)) {
-			ni_dracut_cmdline_parse_ip();
-		}
-		*/
+		/* while (pos != -1U) {
+			printf("%s is %s \n", *ptr, params->data[pos].value);
+			ni_var_array_remove_at(params, pos);
+			pos = ni_var_array_find(params, 0, &(ni_var_t) {*ptr, ""}, &ni_dracut_is_same_key, NULL);
+		}*/
 	}
+
+
+	// Extract all ifname params
+	// pos = ni_var_array_find(params, 0, &(ni_var_t) {"ifname", ""}, &ni_dracut_is_same_key, NULL);
+	// while (pos != -1U) {
+	// 	printf("ifname is %s \n", params->data[pos].value);
+	// 	ni_var_array_remove_at(params, pos);
+	// 	pos = ni_var_array_find(params, 0, &(ni_var_t) {"ifname", ""}, &ni_dracut_is_same_key, NULL);
+	// }
+
+	// Extract all vlan
+	// Extract all bond
+	// Extract all bridge
+
+
+	// Extract all ip params
+	// pos = ni_var_array_find(params, 0, &(ni_var_t) {"ip", ""}, &ni_dracut_is_same_key, NULL);
+	// while (pos != -1U) {
+	// 	printf("ip is %s \n", params->data[pos].value);
+	// 	ni_var_array_remove_at(params, pos);
+	// 	pos = ni_var_array_find(params, 0, &(ni_var_t) {"ip", ""}, &ni_dracut_is_same_key, NULL);
+	// }
 
 	return TRUE;
 }
@@ -181,7 +286,8 @@ ni_dracut_cmdline_parse(const ni_string_array_t *lines)
 int
 main(int argc, char *argv[])
 {
-	ni_string_array_t lines = NI_STRING_ARRAY_INIT;
+	//ni_string_array_t params = NI_STRING_ARRAY_INIT;
+	ni_var_array_t params = NI_VAR_ARRAY_INIT;
 	ni_string_array_t files = NI_STRING_ARRAY_INIT;
 	const char *directory = "dracut";
 	unsigned int i;
@@ -191,15 +297,19 @@ main(int argc, char *argv[])
 		char *filename = NULL;
 
 		ni_string_printf(&filename, "%s/%s", directory, files.data[i]);
-		ni_dracut_cmdline_from_file(&lines, filename);
+		ni_dracut_cmdline_file_parse_va(&params, filename);
 		ni_string_free(&filename);
 	}
 	ni_string_array_destroy(&files);
-	for (i = 1; i < (unsigned int)argc && argv[i]; ++i) {
-		ni_string_array_append(&lines, argv[i]);
-	}
 
-	ni_dracut_cmdline_parse(&lines);
-	ni_string_array_destroy(&lines);
+	// Add additional params passed through arguments
+	/* for (i = 1; i < (unsigned int)argc && argv[i]; ++i) {
+		//ni_string_array_append(&params, argv[i]);
+		ni_var_array_append(&params, argv[i]); //Missing third param
+	}*/
+
+	ni_dracut_cmdline_parse(&params);
+	//ni_string_array_destroy(&params);
+	ni_var_array_destroy(&params);
 	return 0;
 }

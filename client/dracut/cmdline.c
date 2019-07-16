@@ -45,11 +45,6 @@
 #include "util_priv.h"
 
 
-/**
- * FIXME: This static function is already defined in sysconfig.c,
- * move it to util.c and use it from there
- */
-static ni_bool_t unquote(char *);
 static char * __ni_suse_default_hostname;
 
 //FIXME: Like described below, this is duplicated, move this to a common place for both compat-suse.c and cmdline.c
@@ -359,7 +354,7 @@ ni_cmdlineconfig_add_interface(ni_compat_netdev_array_t *nd, const char *name, c
 
 	if (value) {
 		strcpy(filtered_value, value);
-		unquote(filtered_value);
+//		unquote(filtered_value);
 	}
 
 	//FIXME: This should be parsed using strtok
@@ -553,6 +548,47 @@ ni_cmdlineconfig_read(const char *filename, ni_compat_netdev_array_t *nd, const 
 	return TRUE;
 }
 
+static ni_bool_t
+ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *filename)
+{
+	ni_stringbuf_t line = NI_STRINGBUF_INIT_DYNAMIC;
+	char buf[BUFSIZ], eol;
+	size_t len;
+	FILE *file;
+
+	if (!params || ni_string_empty(filename))
+		return FALSE;
+
+	if (!(file = fopen(filename, "r")))
+		return FALSE;
+
+	memset(&buf, 0, sizeof(buf));
+	while (fgets(buf, sizeof(buf), file)) {
+		len = strcspn(buf, "\r\n");
+		eol = buf[len];
+		buf[len] = '\0';
+
+		if (len) {
+			fprintf(stdout, "fgets returned %zu bytes data: >%s<\n", len, buf);
+			ni_stringbuf_puts(&line, buf);
+		}
+		if (eol) {
+			ni_dracut_cmdline_line_parse(params, &line);
+			ni_stringbuf_clear(&line);
+		}
+	}
+
+	/* EOF while reading line with missing EOL termination */
+	if (line.len) {
+		ni_dracut_cmdline_line_parse(params, &line);
+		ni_stringbuf_clear(&line);
+	}
+
+	ni_stringbuf_destroy(&line);
+	fclose(file);
+	return TRUE;
+}
+
 /**
  * This function takes the path to a file and reads all the configuration variables
  * in it using ni_cmdlineconfig_read
@@ -607,6 +643,11 @@ ni_ifconfig_read_dracut_cmdline_dir(xml_document_array_t *docs, const char *type
 	return TRUE;
 }
 
+
+/** Main function, should read the dracut cmdline input and do mainly two things:
+ *   - Parse the input and separate it in a string array where each string is exactly one config param
+ *   - Construct the ni_compat_netdev struct
+ */
 ni_bool_t
 ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 			const char *root, const char *path, ni_bool_t check_prio, ni_bool_t raw)
@@ -618,6 +659,7 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 	ni_compat_ifconfig_t conf;
 	ni_compat_ifconfig_init(&conf, type);
 
+	/** Set default paths in case there hasn't been any specified */
 	if (ni_string_empty(path)) {
 		ni_string_array_append(&cmdline_files, "/etc/cmdline");
 		ni_string_array_append(&cmdline_files, "/etc/cmdline.d/");
@@ -627,6 +669,7 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 		ni_string_array_append(&cmdline_files, path);
 	}
 
+	/** For each file */
 	for (i = 0; i < cmdline_files.count; ++i) {
 		if (ni_string_empty(root)) {
 			snprintf(pathbuf, sizeof(pathbuf), "%s", cmdline_files.data[i]);
@@ -634,8 +677,10 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 			snprintf(pathbuf, sizeof(pathbuf), "%s/%s", root, cmdline_files.data[i]);
 		}
 
+		/** Check if it's a regular file or a dir */
 		if (ni_isreg(pathbuf))
 			rv = ni_ifconfig_read_dracut_cmdline_file(array, type, ni_dirname(pathbuf), ni_basename(pathbuf), check_prio, raw, &conf);
+			//rv = ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *)
 		else if (ni_isdir(pathbuf))
 			rv = ni_ifconfig_read_dracut_cmdline_dir(array, type, root, pathbuf, check_prio, raw, &conf);
 	}
@@ -644,52 +689,6 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 		ni_compat_generate_interfaces(array, &conf, FALSE, FALSE);
 
 	return rv;
-}
-
-/**
- * FIXME: This static function is already defined in sysconfig.c,
- * move it to util.c and use it from there
- */
-
-/* Extract values from a setting. string starts after '='
- * Good: sym=val ; sym="val" ; sym='val'
- * Bad:  sym="val ; sym='val
- *
- * returns true if val is valid.
- */
-static ni_bool_t
-unquote(char *string)
-{
-	char quote_sign = 0;
-	char *src, *dst, cc, lc = 0;
-	ni_bool_t ret = TRUE;
-
-	if (!string)
-		return ret;
-
-	ret = TRUE;
-	src = dst = string;
-	if (*string == '"' || *string == '\'') {
-		quote_sign = *string;
-		src++;
-	}
-	do {
-		cc = *src;
-		if (!cc) {
-			ret = quote_sign && lc == quote_sign;
-			break;
-		}
-		if (isspace(cc) && !quote_sign)
-			break;
-		if (cc == quote_sign)
-			break;
-		*dst = lc = cc;
-		dst++;
-		src++;
-	} while (1);
-
-	*dst = '\0';
-	return ret;
 }
 
 /**
