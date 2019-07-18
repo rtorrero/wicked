@@ -111,6 +111,7 @@ extern int		ni_string_array_copy(ni_string_array_t *dst, const ni_string_array_t
 extern void		ni_string_array_move(ni_string_array_t *dst, ni_string_array_t *src);
 extern void		ni_string_array_destroy(ni_string_array_t *);
 extern int		ni_string_array_append(ni_string_array_t *, const char *);
+extern int		ni_string_array_append_until(ni_string_array_t *, const char *, unsigned int);
 extern int		ni_string_array_insert(ni_string_array_t *, unsigned int, const char *);
 extern int		ni_string_array_set(ni_string_array_t *, unsigned int, const char *);
 extern int		ni_string_array_get(ni_string_array_t *, unsigned int, char **);
@@ -460,4 +461,3 @@ extern ni_bool_t	ni_check_printable(const char *, size_t);
 extern const char *	ni_print_suspect(const char *, size_t);
 
 #endif /* __WICKED_UTIL_H__ */
-

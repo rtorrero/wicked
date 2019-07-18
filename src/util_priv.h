@@ -13,7 +13,6 @@ extern void *	xcalloc(unsigned int, size_t);
 extern void *	xrealloc(void *, size_t);
 
 extern char *	xstrdup(const char *);
+extern char *   xstrndup(const char *, unsigned int);
 
 #endif /* __WICKED_UTIL_PRIV_H__ */
-
-

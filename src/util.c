@@ -160,6 +160,21 @@ ni_string_array_append(ni_string_array_t *nsa, const char *str)
 }
 
 int
+ni_string_array_append_until(ni_string_array_t *nsa, const char *str, unsigned int n)
+{
+	char *newstr;
+
+	/* Note, this allows a NULL string pointer to be inserted into the array. */
+	newstr = xstrndup(str, n);
+	if (__ni_string_array_append(nsa, newstr) < 0) {
+		free(newstr);
+		return -1;
+	}
+
+	return 0;
+}
+
+int
 ni_string_array_insert(ni_string_array_t *nsa, unsigned int pos, const char *str)
 {
 	char *newstr;
@@ -3102,6 +3117,19 @@ xstrdup(const char *string)
 	return p;
 }
 
+char *
+xstrndup(const char *string, unsigned int n)
+{
+	char *p;
+
+	if (string == NULL)
+		return NULL;
+	p = strndup(string, n);
+	if (p == NULL)
+		ni_fatal("allocation failed strdup(%s): %m", string);
+	return p;
+}
+
 ni_bool_t
 ni_uint_in_range(const ni_uint_range_t *range, const unsigned int value)
 {
@@ -3454,4 +3482,3 @@ ni_print_suspect(const char *str, size_t len)
 	}
 	return buf;
 }
-
