@@ -25,6 +25,9 @@
 #ifndef WICKED_CLIENT_DRACUT_CMDLINE_H
 #define WICKED_CLIENT_DRACUT_CMDLINE_H
 
+#include <wicked/netinfo.h>
+#include "client/wicked-client.h"
+
 typedef enum ni_cmdlineconfig_ip_syntax {
 	NI_CMDLINE_SYNTAX_INVALID,
 	NI_CMDLINE_SYNTAX_SIMPLE,
@@ -32,6 +35,14 @@ typedef enum ni_cmdlineconfig_ip_syntax {
 	NI_CMDLINE_SYNTAX_EXPLICIT_MACADDR,
 	NI_CMDLINE_SYNTAX_EXPLICIT_DNS
 } ni_cmdlineconfig_ip_syntax_t;
+
+typedef enum ni_cmdlineconfig_dracut_params {
+	NI_DRACUT_PARAM_IFNAME = 0U,
+	NI_DRACUT_PARAM_BRIDGE,
+	NI_DRACUT_PARAM_BOND,
+	NI_DRACUT_PARAM_VLAN,
+	NI_DRACUT_PARAM_IP,
+} ni_cmdlineconfig_dracut_params_t;
 
 extern ni_bool_t	ni_ifconfig_read_dracut_cmdline(xml_document_array_t *,
 						const char *,

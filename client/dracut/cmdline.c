@@ -39,11 +39,45 @@
 #include <wicked/xml.h>
 #include <wicked/vlan.h>
 
-#include "client/dracut/cmdline.h"
 #include "client/wicked-client.h"
+#include "cmdline.h"
 #include "client/ifconfig.h"
 #include "util_priv.h"
+#include "buffer.h"
 
+static const ni_intmap_t        dracut_params[] = {
+	{ "ifname",             NI_DRACUT_PARAM_IFNAME  },
+	{ "bridge",             NI_DRACUT_PARAM_BRIDGE  },
+	{ "bond",               NI_DRACUT_PARAM_BOND    },
+	{ "vlan",               NI_DRACUT_PARAM_VLAN    },
+	{ "ip",			NI_DRACUT_PARAM_IP	},
+	{ NULL,                 -1U                     },
+};
+
+ni_bool_t
+ni_test_crap(const ni_compat_netdev_array_t *param1, const char *param2)
+{
+	printf("hello I'm working fine :-)\n");
+
+	return TRUE;
+}
+
+ni_bool_t
+ni_dracut_param_type(const char *name, unsigned int *param)
+{
+        return ni_parse_uint_mapped(name, dracut_params, param) == 0;
+}
+
+const char *
+ni_dracut_param_name(unsigned int *param)
+{
+        return ni_format_uint_mapped(*param, dracut_params);
+}
+
+static inline unsigned int param_find(const ni_var_array_t *params, unsigned int pos, const ni_var_t *var)
+{
+	return ni_var_array_find(params, pos, var, ni_var_name_equal, NULL);
+}
 
 static char * __ni_suse_default_hostname;
 
@@ -134,6 +168,86 @@ ni_cmdlineconfig_parse_opt_ip_method(ni_compat_netdev_t *compat, const char *met
 	}
 
 	return rv;
+}
+
+/**
+ * This function decomposes the value of a ni_var_t param into multiple
+ * strings to an ni_string_array
+ */
+ni_bool_t
+ni_cmdlineconfig_decompose_param(ni_var_t *param, ni_string_array_t *sa)
+{
+	const char delim[2] = ":";
+	const char *ptr;
+
+	if (!param || !sa)
+		return FALSE;
+
+	ptr = param->value;
+
+	while (ptr) {
+		ni_string_array_append_until(sa, ptr, strcspn(ptr, ":"));
+		strchr(ptr, ":");
+	}
+	return TRUE;
+}
+
+ni_bool_t
+ni_cmdlineconfig_parse_opt_ip_new(ni_compat_netdev_t *compat, ni_var_t *param)
+{
+	int rv = NI_CMDLINE_SYNTAX_INVALID;
+	ni_sockaddr_t addr;
+	unsigned int prefixlen = ~0U;
+	// FIXME: Duplicating the ipv4 ipv6 stuff here is not cool
+	ni_ipv4_devinfo_t *ipv4;
+	ni_ipv6_devinfo_t *ipv6;
+	const char *ifname = NULL;
+	ni_string_array_t subparams = NI_STRING_ARRAY_INIT;
+
+	if (!param)
+		return FALSE;
+
+	ni_cmdlineconfig_decompose_param(param, &subparams);
+
+	// if (!ni_sockaddr_prefix_parse(param->data[0], &addr, &prefixlen)) {
+	// 	if (params->count < 2) {
+
+	// 		// This is the ip=<conf-method> syntax
+	// 		if (!ni_cmdlineconfig_parse_opt_ip_method(compat, params->data[0]))
+	// 			rv = NI_CMDLINE_SYNTAX_INVALID;
+	// 		else
+	// 			rv = NI_CMDLINE_SYNTAX_SIMPLE;
+
+	// 	} else {
+
+	// 		//This is the ip=<interface>:... case
+	// 		if (!ni_cmdlineconfig_parse_opt_ip_method(compat, params->data[1])) {
+	// 			rv = NI_CMDLINE_SYNTAX_INVALID;
+	// 		} else {
+	// 			ifname = params->data[0];
+	// 			rv = NI_CMDLINE_SYNTAX_SIMPLE_IFNAME;
+	// 		}
+	// 	}
+	// } else {
+	// 	// FIXME: Finish this syntax implementation and check
+	// 	// (two cases actually here, the one with DNS at the end and the one with MTU and macaddr, just one for now)
+	// 	// ip=<client-IP>:[<peer>]:<gateway-IP>:<netmask>:<client_hostname>:<interface>:{none|off|dhcp|on|any|dhcp6|auto6|ibft}
+	// 	if (addr.ss_family == AF_INET) {
+	// 		ipv4 = ni_netdev_get_ipv4(compat->dev);
+	// 		ni_tristate_set(&ipv4->conf.enabled, TRUE);
+	// 		ni_tristate_set(&ipv4->conf.arp_verify, TRUE);
+	// 	} else if (addr.ss_family == AF_INET6) {
+	// 		ipv6 = ni_netdev_get_ipv6(compat->dev);
+	// 		ni_tristate_set(&ipv6->conf.enabled, TRUE);
+	// 	}
+	// 	ni_address_new(addr.ss_family, prefixlen, &addr, &compat->dev->addrs);
+	// 	ifname = params->data[5];
+	// 	rv = NI_CMDLINE_SYNTAX_EXPLICIT_DNS;
+	// }
+
+	// // Add the interface name
+	// compat->dev->name = xstrdup(ifname);
+	// return rv;
 }
 
 /** Here we return an int so that we let the caller know what type of ip= format
@@ -332,6 +446,55 @@ cleanup:
 }
 
 /**
+ * parse 'ip="foo bar" blub=hoho' lines with key[=<quoted-value|value>]
+ * @return <0 on error, 0 when param extracted, >0 to skip/ignore (crap or empty param)
+ */
+static int
+ni_dracut_cmdline_param_parse_and_unquote(ni_stringbuf_t *param, ni_buffer_t *buf)
+{
+	int quote = 0, esc = 0, parse = 0, cc;
+
+	while ((cc = ni_buffer_getc(buf)) != EOF) {
+		if (parse) {
+			if (quote) {
+				if (esc) {
+					/* only \" for now */
+					ni_stringbuf_putc(param, cc);
+					esc = 0;
+				} else
+				if (cc == '\\') {
+					esc = cc;
+				} else
+				if (cc == quote)
+					quote = 0;
+				else
+					ni_stringbuf_putc(param, cc);
+			} else {
+				if (cc == '\'')
+					quote = cc;
+				else
+				if (cc == '"')
+					quote = cc;
+				else
+				if (isspace((unsigned int)cc))
+					return FALSE;
+				else
+					ni_stringbuf_putc(param, cc);
+			}
+		} else {
+			/* skip spaces before/after */
+			if (isspace((unsigned int)cc))
+				continue;
+
+			parse = 1;
+			ni_stringbuf_putc(param, cc);
+		}
+	}
+
+	return param->len == 0;
+}
+
+/**
  * This function adds an interface to the ni_compat_netdev_array
  * structure. It should also check only for supported configuration values
  * Maybe should be renamed to ni_cmdlineconfig_parse_value or something?
@@ -427,129 +590,93 @@ ni_cmdlineconfig_add_interface(ni_compat_netdev_array_t *nd, const char *name, c
 	return FALSE;
 }
 
-int
-ni_cmdlineconfig_append_words(const char *line, ni_string_array_t *words)
+
+static ni_bool_t
+ni_dracut_cmdline_line_parse(ni_var_array_t *params, ni_stringbuf_t *line)
 {
-	char tokenized[512];	//FIXME: change this to dynamic strings
-	char *wp;
+	ni_stringbuf_t param = NI_STRINGBUF_INIT_DYNAMIC;
+	char *name;
+	char *value;
+	ni_buffer_t buf;
+	int ret;
 
-	strcpy(tokenized, line);
+	if (!params || !line)
+		return FALSE;
 
-	wp = strtok(tokenized, ":");
+	if (ni_string_empty(line->string))
+		return TRUE;
 
-	while (wp != NULL) {
-		ni_string_array_append(words, wp);
-		wp = strtok(NULL, ":");
+	ni_buffer_init_reader(&buf, line->string, line->len);
+	while (!(ret = ni_dracut_cmdline_param_parse_and_unquote(&param, &buf))) {
+		if (ni_string_empty(param.string))
+			continue;
+		name = xstrdup(param.string);
+		value = strchr(name, '=');
+		if (*value != '\0') {
+			*value = '\0';
+			++value;
+		} else {
+			value = NULL;
+		}
+		ni_var_array_append(params, name, value);
+		ni_stringbuf_clear(&param);
 	}
+	ni_stringbuf_destroy(&param);
 
-	return words->count;
+	return ret != -1;
 }
 
-/*
- * Read a dracut file iterating through lines. When a variable in the form of
- * name=value or name, we call ni_cmdlineconfig_add_interface to process the
- * interface configuration details
- */
+/**
+ * Identify what function needs to be called to handle the supplied param
+ **/
 ni_bool_t
-ni_cmdlineconfig_read(const char *filename, ni_compat_netdev_array_t *nd, const char **varnames)
+ni_dracut_cmdline_call_param_handler(ni_var_t *var, ni_compat_netdev_array_t *nd)
 {
-	char linebuf[512];
-	ni_bool_t is_open_quote = FALSE;
-	ni_string_array_t param_words = NI_STRING_ARRAY_INIT;
-	FILE *fp;
-
-	ni_debug_readwrite("ni_cmdlineconfig_read(%s)", filename);
-	if (!(fp = fopen(filename, "r"))) {
-		ni_error("unable to open %s: %m", filename);
-		return FALSE;
+	switch ((var->value)) {
+		case NI_DRACUT_PARAM_IP:
+			printf("OMG ITS IP PARAM\n");
+			ni_cmdlineconfig_parse_opt_ip_new(nd, var);
+			break;
+		default:
+			printf("No idea what this crap is\n");
 	}
 
-	//FIXME: Use ni_stringbuf_t buff instead of the linebuff from above. Example in __ni_suse_read_routes()
-	while (fgets(linebuf, sizeof(linebuf), fp) != NULL) {
-		char *name, *value;
-		char *sp = linebuf;
-
-		while (isspace(*sp))
-			++sp;
-
-		//Ignore lines starting with '#' (comments)
-		if (*sp == '#')
-			continue;
-
-		//FIXME: refactor this loop into something more readable
-		while (*sp != '\n' && *sp != '\0') {
-
-			//Get the name of the variable
-			while (isspace(*sp))
-				++sp;
-			name = sp;
-
-			//Keep reading next char until we find the ending
-			while (isalnum(*sp) || *sp == '_' || *sp == '-' || *sp == '.' || *sp == '\\')
-				++sp;
-
-			//If a character that is not part of a valid name is not one of these, just move on
-			if (*sp != '=' && *sp != ' ' && *sp != '\n' && *sp != '"')
-				continue;
-
-			if (*sp == ' ' || *sp == '\n') {
-				// This is the case where we have just a variable with no parameters
-				value = NULL;
-				*sp++ = '\0';
-				ni_cmdlineconfig_append_words(value, &param_words);
-				ni_cmdlineconfig_parse_cmdline_var(nd, name, &param_words, filename);
-				ni_string_array_destroy(&param_words);
-
-				continue;
-			} else {
-				*sp++ = '\0';
-				value = sp;
-			}
-
-
-			/* If we were given a list of variable names to match
-			* against, ignore all variables not in this list. */
-			if (varnames) {
-				const char **vp = varnames, *match;
-
-				while ((match = *vp++) != NULL) {
-					if (!strcmp(match, name))
-						break;
-				}
-				if (!match)
-					*sp++ = '\0';
-			}
-
-			// FIXME: Remove the || for a function that checks this
-			while (isalnum(*sp) || *sp == ':' || *sp == '.' || *sp == '/' || *sp == '[' || *sp == ']' || *sp == '-' || *sp == '_' || *sp == '=' || *sp == '"' || (*sp == ' ' && is_open_quote)) {
-				if (*sp == '"' && !is_open_quote)
-					is_open_quote = TRUE;
-				++sp;
-			}
-
-			if (*sp == ' ' && is_open_quote) {
-				continue;
-			}
-
-			if (*sp != ' ' && *sp != '\n' && *sp != '\0')
-				continue;
-
-			if (*sp != '\0')	//FIXME why ?
-				*sp++ = '\0';
-
-			is_open_quote = FALSE;
-			ni_cmdlineconfig_append_words(value, &param_words);
-			ni_cmdlineconfig_parse_cmdline_var(nd, name, &param_words, filename);
-			ni_string_array_destroy(&param_words);
-		}
-	}
-
-	fclose(fp);
 	return TRUE;
 }
 
+/**
+ * This function will apply the params found in the params array to the compat_netdev array
+ */
 static ni_bool_t
-ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *filename)
+ni_dracut_cmdline_apply(const ni_var_array_t *params, ni_compat_netdev_array_t *nd)
+{
+	unsigned int i, pos;
+	char *pptr;
+
+	if (!params)
+		return FALSE;
+
+	for (i = 0; (pptr = (char *) ni_dracut_param_name(&i)); ++i) {
+		const ni_var_t var = { .name = pptr, .value = NULL };
+		pos = 0;
+		while ((pos = ni_var_array_find(params, pos, &var, &ni_var_name_equal, NULL)) != -1U) {
+			printf("%s is %s \n", pptr, params->data[pos].value);
+			++pos;
+		}
+	}
+
+	return TRUE;
+}
+
+
+/**
+ * Read file and store into a ni_var_array all the params
+ * that where found in filename
+ *
+ * Returns true/false whether it was correctly processed or not
+ */
+static ni_bool_t
+ni_dracut_cmdline_file_parse(ni_var_array_t *params, const char *filename)
 {
 	ni_stringbuf_t line = NI_STRINGBUF_INIT_DYNAMIC;
 	char buf[BUFSIZ], eol;
@@ -589,61 +716,6 @@ ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *filename)
 	return TRUE;
 }
 
-/**
- * This function takes the path to a file and reads all the configuration variables
- * in it using ni_cmdlineconfig_read
- */
-static ni_bool_t
-ni_ifconfig_read_dracut_cmdline_file(xml_document_array_t *docs, const char *type,
-			const char *root, const char *pathname, ni_bool_t check_prio,
-			ni_bool_t raw, ni_compat_ifconfig_t *conf)
-{
-	char pathbuf[PATH_MAX] = {'\0'};
-
-	if (!ni_string_empty(root)) {
-		snprintf(pathbuf, sizeof(pathbuf), "%s/%s", root, pathname);
-		pathname = pathbuf;
-	}
-
-	return ni_cmdlineconfig_read(pathbuf, &conf->netdevs, NULL);
-}
-
-/**
- * This function takes a directory in pathname and scans it for .conf files.
- * Then it uses ni_ifconfig_read_dracut_cmdline_file to read all .conf files
- */
-static ni_bool_t
-ni_ifconfig_read_dracut_cmdline_dir(xml_document_array_t *docs, const char *type,
-			const char *root, const char *pathname, ni_bool_t check_prio,
-			ni_bool_t raw, ni_compat_ifconfig_t *conf)
-{
-	char pathbuf[PATH_MAX] = {'\0'};
-	ni_string_array_t files = NI_STRING_ARRAY_INIT;
-	unsigned int i;
-	ni_bool_t empty = TRUE;
-
-	ni_assert(docs);
-
-	if (!ni_string_empty(root)) {
-		snprintf(pathbuf, sizeof(pathbuf), "%s/%s", root, pathname);
-		pathname = pathbuf;
-	}
-
-	if (ni_scandir(pathname, "*.conf", &files) != 0) {
-		for (i = 0; i < files.count; ++i) {
-			if (ni_ifconfig_read_dracut_cmdline_file(docs, type, pathname, files.data[i], check_prio, raw, conf))
-				empty = FALSE;
-		}
-	}
-
-	if (empty)
-		ni_debug_ifconfig("No valid configuration files found at %s", pathname);
-
-	ni_string_array_destroy(&files);
-	return TRUE;
-}
-
-
 /** Main function, should read the dracut cmdline input and do mainly two things:
  *   - Parse the input and separate it in a string array where each string is exactly one config param
  *   - Construct the ni_compat_netdev struct
@@ -653,42 +725,18 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 			const char *root, const char *path, ni_bool_t check_prio, ni_bool_t raw)
 {
 	unsigned int i;
-	char pathbuf[PATH_MAX];
-	ni_bool_t rv = FALSE;
-	ni_string_array_t cmdline_files = NI_STRING_ARRAY_INIT;
 	ni_compat_ifconfig_t conf;
 	ni_compat_ifconfig_init(&conf, type);
+	ni_var_array_t params = NI_VAR_ARRAY_INIT;
 
-	/** Set default paths in case there hasn't been any specified */
-	if (ni_string_empty(path)) {
-		ni_string_array_append(&cmdline_files, "/etc/cmdline");
-		ni_string_array_append(&cmdline_files, "/etc/cmdline.d/");
-		ni_string_array_append(&cmdline_files, "/proc/cmdline");
-		rv = TRUE; /* do not fail if default path does not exist */
-	} else {
-		ni_string_array_append(&cmdline_files, path);
+	if (ni_dracut_cmdline_file_parse(&params, path)) {
+		ni_dracut_cmdline_apply(&params, &conf.netdevs);
+		/*ni_cmdlineconfig_parse_cmdline_var
+		ni_compat_generate_interfaces(array, &conf, FALSE, FALSE);*/
+		return TRUE;
 	}
 
-	/** For each file */
-	for (i = 0; i < cmdline_files.count; ++i) {
-		if (ni_string_empty(root)) {
-			snprintf(pathbuf, sizeof(pathbuf), "%s", cmdline_files.data[i]);
-		} else {
-			snprintf(pathbuf, sizeof(pathbuf), "%s/%s", root, cmdline_files.data[i]);
-		}
-
-		/** Check if it's a regular file or a dir */
-		if (ni_isreg(pathbuf))
-			rv = ni_ifconfig_read_dracut_cmdline_file(array, type, ni_dirname(pathbuf), ni_basename(pathbuf), check_prio, raw, &conf);
-			//rv = ni_dracut_cmdline_file_parse(ni_string_array_t *params, const char *)
-		else if (ni_isdir(pathbuf))
-			rv = ni_ifconfig_read_dracut_cmdline_dir(array, type, root, pathbuf, check_prio, raw, &conf);
-	}
-
-	if (rv)
-		ni_compat_generate_interfaces(array, &conf, FALSE, FALSE);
-
-	return rv;
+	return FALSE;
 }
 
 /**
