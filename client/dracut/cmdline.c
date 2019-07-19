@@ -322,9 +322,9 @@ ni_dracut_cmdline_apply(const ni_var_array_t *params, ni_compat_netdev_array_t *
 		return FALSE;
 
 	for (i = 0; (pptr = (char *) ni_dracut_param_name(&i)); ++i) {
-		const ni_var_t var = { .name = pptr, .value = NULL };
+		const ni_var_t match = { .name = pptr, .value = NULL };
 		pos = 0;
-		while ((pos = ni_var_array_find(params, pos, &var, &ni_var_name_equal, NULL)) != -1U) {
+		while ((pos = ni_var_array_find(params, pos, &match, &ni_var_name_equal, NULL)) != -1U) {
 			printf("%s is %s \n", pptr, params->data[pos].value);
 			ni_dracut_cmdline_call_param_handler(&params->data[pos], nd);
 			++pos;
