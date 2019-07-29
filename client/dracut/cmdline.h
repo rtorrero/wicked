@@ -25,6 +25,10 @@
 #ifndef WICKED_CLIENT_DRACUT_CMDLINE_H
 #define WICKED_CLIENT_DRACUT_CMDLINE_H
 
+
+/**
+ * FIXME: it probably doesn't make much sense to expose the enums in the .h
+ */
 typedef enum ni_cmdlineconfig_dracut_params {
 	NI_DRACUT_PARAM_IFNAME = 0U,
 	NI_DRACUT_PARAM_BRIDGE,
