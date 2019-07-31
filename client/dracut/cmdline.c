@@ -34,6 +34,7 @@
 #include <wicked/netinfo.h>
 #include <wicked/types.h>
 #include <wicked/bridge.h>
+#include <wicked/vlan.h>
 
 #include "cmdline.h"
 #include "client/wicked-client.h"
@@ -174,10 +175,65 @@ ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, 
 	ni_bridge_t *bridge;
 	ni_compat_netdev_t *nd;
 
+	//FIXME: Add missing checks
+
 	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL);
 	nd->dev->link.type = NI_IFTYPE_BRIDGE;
 	bridge = ni_netdev_get_bridge(nd->dev);
+
+	//FIXME: Add support for multiple ports
 	ni_bridge_port_new(bridge, ports, 0);
+
+	return nd;
+}
+
+static ni_compat_netdev_t *
+ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, const char *etherdev)
+{
+	char *vlantag;
+	ni_vlan_t *vlan;
+	ni_compat_netdev_t *nd;
+	unsigned int tag = 0;
+	size_t len;
+
+	if (vlanname && !ni_netdev_name_is_valid(vlanname)) {
+		ni_error("Rejecting suspect interface name: %s", vlanname);
+		return FALSE;
+	}
+
+	nd = ni_dracut_cmdline_add_netdev(nda, vlanname, NULL, NULL);
+	nd->dev->link.type = NI_IFTYPE_VLAN;
+	vlan = ni_netdev_get_vlan(nd->dev);
+
+	if (!strcmp(vlanname, etherdev)) {
+		ni_error("ifcfg-%s: ETHERDEVICE=\"%s\" self-reference",
+			vlanname, etherdev);
+		return FALSE;
+	}
+
+	if ((vlantag = strrchr(vlanname, '.')) != NULL) {
+		/* name.<TAG> */
+		++vlantag;
+	} else {
+		/* name<TAG> */
+		len = strlen(vlanname);
+		vlantag = &vlanname[len];
+		while(len > 0 && isdigit((unsigned char)vlantag[-1]))
+			vlantag--;
+	}
+
+	if (ni_parse_uint(vlantag, &tag, 10) < 0) {
+		ni_error("ifcfg-%s: Cannot parse vlan-tag from interface name",
+			nd->dev->name);
+		return FALSE;
+	}
+	vlan->protocol = NI_VLAN_PROTOCOL_8021Q;
+	vlan->tag = tag;
+
+
+	// Add the name
+	nd->dev->name = xstrdup(vlanname);
+
 
 	return nd;
 }
@@ -311,7 +367,7 @@ ni_dracut_parse_opt_team()
 }
 
 ni_bool_t
-ni_dracut_cmdline_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param)
+ni_dracut_cmdline_parse_opt_bridge(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
 	char *end, *beg;
 
@@ -323,7 +379,7 @@ ni_dracut_cmdline_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param
 	if (!(end = token_next(param->value, ':')))
 		return FALSE;
 
-	ni_dracut_cmdline_add_bridge(nd, beg, end);
+	ni_dracut_cmdline_add_bridge(nda, beg, end);
 
 	return TRUE;
 }
@@ -335,8 +391,19 @@ ni_dracut_cmdline_parse_opt_ifname()
 }
 
 ni_bool_t
-ni_dracut_cmdline_parse_opt_vlan()
+ni_dracut_cmdline_parse_opt_vlan(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
+	char *end, *beg;
+
+	if (ni_string_empty(param->value))
+		return FALSE;
+
+	beg = param->value;
+
+	if (!(end = token_next(param->value, ':')))
+		return FALSE;
+
+	ni_dracut_cmdline_add_vlan(nda, end, beg);
 	return TRUE;
 }
 
