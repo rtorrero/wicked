@@ -42,12 +42,13 @@ static const ni_intmap_t        dracut_params[] = {
 	{ "ifname",             NI_DRACUT_PARAM_IFNAME  },
 	{ "bridge",             NI_DRACUT_PARAM_BRIDGE  },
 	{ "bond",               NI_DRACUT_PARAM_BOND    },
+	{ "team", 		NI_DRACUT_PARAM_TEAM	},
 	{ "vlan",               NI_DRACUT_PARAM_VLAN    },
 	{ "ip",			NI_DRACUT_PARAM_IP	},
 	{ NULL,                 -1U                     },
 };
 
-static const ni_intmap_t	bootproto[] = {
+static const ni_intmap_t	bootprotos[] = {
 	{ "off",	0	},
 	{ "none",	1	},
 	{ "dhcp",	2	},
@@ -109,7 +110,7 @@ ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
 {
 	unsigned int bootproto_type;
 
-	if (ni_parse_uint_mapped(val, bootproto, &bootproto_type) < 0)
+	if (ni_parse_uint_mapped(val, bootprotos, &bootproto_type) < 0)
 		return FALSE;
 
 	switch (bootproto_type) {
@@ -142,7 +143,7 @@ ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
  * ifname as name or if it exists, adds the hwaddr to it
  */
 static ni_compat_netdev_t *
-ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, const ni_hwaddr_t *hwaddr)
+ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, const ni_hwaddr_t *hwaddr, const unsigned int *mtu)
 {
 	ni_compat_netdev_t *nd;
 
@@ -156,58 +157,57 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 		nd->identify.hwaddr.len = hwaddr->len;
 		nd->identify.hwaddr.type = hwaddr->type;
 	}
+
+	if (mtu) {
+		nd->dev->link.mtu = *mtu;
+	}
+
+	ni_compat_netdev_array_append(nda, nd);
+
 	return nd;
 }
 
 /**
- * ip=<bootproto> syntax variant
+ * ip={dhcp|on|any|dhcp6|auto6|either6} syntax variant
  */
 static ni_bool_t
 parse_ip1(ni_compat_netdev_array_t *nda, char *val)
 {
-	unsigned int bp;
+	unsigned int bootproto;
 	ni_compat_netdev_t *compat;
 
-	if (ni_parse_uint_mapped(val, bootproto, &bp))
+	if (ni_parse_uint_mapped(val, bootprotos, &bootproto))
 			return FALSE;
 
-	compat = ni_dracut_cmdline_add_netdev(nda, NULL, NULL);
+	compat = ni_dracut_cmdline_add_netdev(nda, NULL, NULL, NULL);
 
 	return ni_dracut_cmdline_parse_bootproto(compat, val);
 }
 
 /**
- * ip=<if>:<bootproto> syntax variant
+ * ip=<interface>:{dhcp|on|any|dhcp6|auto6}[:[<mtu>][:<macaddr>]] syntax variant
  */
 static ni_bool_t
 parse_ip2(ni_compat_netdev_array_t *nda, char *val, const char *ifname)
 {
-        char *mac, *mtu, *bootproto;
+        char *mac, *mtu;
         ni_hwaddr_t lladdr;
-        unsigned int u32;
+        unsigned int mtu_u32, bootproto;
+	ni_compat_netdev_t *compat;
 
         if (!ni_netdev_name_is_valid(ifname))
                 return FALSE;
 
-	ni_dracut_cmdline_add_netdev(nda, ifname, NULL);
-
-        bootproto = val;
         if ((mac = token_next(val, ':'))) {
 
-                if (!parse_ip1(nda, bootproto))
-                        return FALSE;
-
-                if (ni_string_len(mac) < ni_link_address_length(ARPHRD_ETHER)) {
+                if (ni_string_len(mac) > ni_link_address_length(ARPHRD_ETHER)) {
                         mtu = mac;
 
                         if (!(mac = token_next(mtu, ':')))
                                 return FALSE;
 
-                        if (ni_parse_uint(mtu, &u32, 10))
+                        if (ni_parse_uint(mtu, &mtu_u32, 10))
                                 return FALSE;
-
-			// FIXME: apply the mtu somewhere (ignored now)
-                        ni_dracut_cmdline_add_netdev(nda, ifname, NULL);
 
                         if (ni_link_address_parse(&lladdr, ARPHRD_ETHER, mac))
                                 return FALSE;
@@ -215,11 +215,15 @@ parse_ip2(ni_compat_netdev_array_t *nda, char *val, const char *ifname)
                         if (ni_link_address_parse(&lladdr, ARPHRD_ETHER, mac))
                                 return FALSE;
                 }
-		ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr);
-                return TRUE;
+		compat = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, &mtu_u32);
         } else {
-                return parse_ip1(nda, bootproto);
+		if (ni_parse_uint_mapped(val, bootprotos, &bootproto))
+			return FALSE;
+
+		compat = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL);
         }
+
+	return ni_dracut_cmdline_parse_bootproto(compat, val);
 }
 
 /**
@@ -273,6 +277,47 @@ ni_dracut_cmdline_parse_opt_ip(ni_compat_netdev_array_t *nd, ni_var_t *param)
 	return TRUE;
 }
 
+ni_bool_t
+ni_dracut_parse_opt_bond(ni_compat_netdev_array_t *nd, ni_var_t *param)
+{
+
+}
+
+ni_bool_t
+ni_dracut_parse_opt_team()
+{
+	return TRUE;
+}
+
+ni_bool_t
+ni_dracut_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param)
+{
+	char *end, *beg;
+
+	if (ni_string_empty(param->value))
+		return FALSE;
+
+	beg = param->value;
+
+	if (!(end = token_next(param->value, ':')))
+		return FALSE;
+
+	return TRUE;
+}
+
+ni_bool_t
+ni_dracut_parse_opt_ifname()
+{
+	return TRUE;
+}
+
+ni_bool_t
+ni_dracut_parse_opt_vlan()
+{
+	return TRUE;
+}
+
+
 /**
  * Identify what function needs to be called to handle the supplied param
  **/
@@ -289,16 +334,19 @@ ni_dracut_cmdline_call_param_handler(ni_var_t *var, ni_compat_netdev_array_t *nd
 			ni_dracut_cmdline_parse_opt_ip(nd, var);
 			break;
 		case NI_DRACUT_PARAM_BOND:
-                        // ni_dracut_cmdline_parse_opt_bond(nd, var);
+                        ni_dracut_cmdline_parse_opt_bond(nd, var);
 			break;
 		case NI_DRACUT_PARAM_BRIDGE:
-                        // ni_dracut_cmdline_parse_opt_bridge(nd, var);
+                        ni_dracut_cmdline_parse_opt_bridge(nd, var);
+			break;
+		case NI_DRACUT_PARAM_TEAM:
+                        ni_dracut_cmdline_parse_opt_bridge(nd, var);
 			break;
 		case NI_DRACUT_PARAM_IFNAME:
-                        // ni_dracut_cmdline_parse_opt_ifname(nd, var);
+                        ni_dracut_cmdline_parse_opt_ifname(nd, var);
 			break;
 		case NI_DRACUT_PARAM_VLAN:
-                        // ni_dracut_cmdline_parse_opt_vlan(nd, var);
+                        ni_dracut_cmdline_parse_opt_vlan(nd, var);
 			break;
 
 		default:
@@ -474,7 +522,6 @@ ni_bool_t
 ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 			const char *root, const char *path, ni_bool_t check_prio, ni_bool_t raw)
 {
-	unsigned int i;
 	ni_compat_ifconfig_t conf;
 	ni_compat_ifconfig_init(&conf, type);
 	ni_var_array_t params = NI_VAR_ARRAY_INIT;
@@ -482,6 +529,7 @@ ni_ifconfig_read_dracut_cmdline(xml_document_array_t *array, const char *type,
 	if (ni_dracut_cmdline_file_parse(&params, path)) {
 		ni_dracut_cmdline_apply(&params, &conf.netdevs);
 
+		ni_compat_generate_interfaces(array, &conf, FALSE, FALSE);
 		return TRUE;
 	}
 

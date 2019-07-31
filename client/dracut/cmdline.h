@@ -33,6 +33,7 @@ typedef enum ni_cmdlineconfig_dracut_params {
 	NI_DRACUT_PARAM_IFNAME = 0U,
 	NI_DRACUT_PARAM_BRIDGE,
 	NI_DRACUT_PARAM_BOND,
+	NI_DRACUT_PARAM_TEAM,
 	NI_DRACUT_PARAM_VLAN,
 	NI_DRACUT_PARAM_IP,
 } ni_cmdlineconfig_dracut_params_t;
