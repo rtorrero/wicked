@@ -33,6 +33,7 @@
 #include <wicked/xml.h>
 #include <wicked/netinfo.h>
 #include <wicked/types.h>
+#include <wicked/bridge.h>
 
 #include "cmdline.h"
 #include "client/wicked-client.h"
@@ -140,7 +141,7 @@ ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
 
 /**
  * Adds a new compat_netdev_t to the array using
- * ifname as name or if it exists, adds the hwaddr to it
+ * ifname as name or if it exists, adds the hwaddr/mtu to it
  */
 static ni_compat_netdev_t *
 ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, const ni_hwaddr_t *hwaddr, const unsigned int *mtu)
@@ -163,6 +164,20 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 	}
 
 	ni_compat_netdev_array_append(nda, nd);
+
+	return nd;
+}
+
+static ni_compat_netdev_t *
+ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, const char *ports)
+{
+	ni_bridge_t *bridge;
+	ni_compat_netdev_t *nd;
+
+	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL);
+	nd->dev->link.type = NI_IFTYPE_BRIDGE;
+	bridge = ni_netdev_get_bridge(nd->dev);
+	ni_bridge_port_new(bridge, ports, 0);
 
 	return nd;
 }
@@ -278,9 +293,15 @@ ni_dracut_cmdline_parse_opt_ip(ni_compat_netdev_array_t *nd, ni_var_t *param)
 }
 
 ni_bool_t
-ni_dracut_parse_opt_bond(ni_compat_netdev_array_t *nd, ni_var_t *param)
+ni_dracut_cmdline_parse_opt_bond(ni_compat_netdev_array_t *nd, ni_var_t *param)
 {
 
+}
+
+ni_bool_t
+ni_dracut_cmdline_parse_opt_team()
+{
+	return TRUE;
 }
 
 ni_bool_t
@@ -290,7 +311,7 @@ ni_dracut_parse_opt_team()
 }
 
 ni_bool_t
-ni_dracut_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param)
+ni_dracut_cmdline_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param)
 {
 	char *end, *beg;
 
@@ -302,17 +323,19 @@ ni_dracut_parse_opt_bridge(ni_compat_netdev_array_t *nd, ni_var_t *param)
 	if (!(end = token_next(param->value, ':')))
 		return FALSE;
 
+	ni_dracut_cmdline_add_bridge(nd, beg, end);
+
 	return TRUE;
 }
 
 ni_bool_t
-ni_dracut_parse_opt_ifname()
+ni_dracut_cmdline_parse_opt_ifname()
 {
 	return TRUE;
 }
 
 ni_bool_t
-ni_dracut_parse_opt_vlan()
+ni_dracut_cmdline_parse_opt_vlan()
 {
 	return TRUE;
 }
@@ -340,7 +363,7 @@ ni_dracut_cmdline_call_param_handler(ni_var_t *var, ni_compat_netdev_array_t *nd
                         ni_dracut_cmdline_parse_opt_bridge(nd, var);
 			break;
 		case NI_DRACUT_PARAM_TEAM:
-                        ni_dracut_cmdline_parse_opt_bridge(nd, var);
+                        ni_dracut_cmdline_parse_opt_team(nd, var);
 			break;
 		case NI_DRACUT_PARAM_IFNAME:
                         ni_dracut_cmdline_parse_opt_ifname(nd, var);
