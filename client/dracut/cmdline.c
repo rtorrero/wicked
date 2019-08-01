@@ -170,19 +170,27 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 }
 
 static ni_compat_netdev_t *
-ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, const char *ports)
+ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, char *ports)
 {
 	ni_bridge_t *bridge;
 	ni_compat_netdev_t *nd;
-
-	//FIXME: Add missing checks
+	char *names = ports;
+	char *next;
 
 	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL);
 	nd->dev->link.type = NI_IFTYPE_BRIDGE;
 	bridge = ni_netdev_get_bridge(nd->dev);
 
-	//FIXME: Add support for multiple ports
-	ni_bridge_port_new(bridge, ports, 0);
+	for (next = token_peek(names, ','); next; names = next, next = token_peek(names, ',')) {
+		++next;
+		token_next(names, ',');
+		if (!ni_netdev_name_is_valid(names)) {
+			ni_warn("rejecting suspect port name '%s'", names);
+			continue;
+		}
+		ni_bridge_port_new(bridge, names, 0);
+	}
+	ni_bridge_port_new(bridge, names, 0);
 
 	return nd;
 }
@@ -211,6 +219,7 @@ ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, 
 		return FALSE;
 	}
 
+	// FIXME: use token_peek and token_next here?
 	if ((vlantag = strrchr(vlanname, '.')) != NULL) {
 		/* name.<TAG> */
 		++vlantag;
@@ -230,10 +239,8 @@ ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, 
 	vlan->protocol = NI_VLAN_PROTOCOL_8021Q;
 	vlan->tag = tag;
 
-
 	// Add the name
 	nd->dev->name = xstrdup(vlanname);
-
 
 	return nd;
 }
