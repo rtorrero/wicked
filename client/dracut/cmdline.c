@@ -145,19 +145,29 @@ ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
  * ifname as name or if it exists, adds the hwaddr/mtu to it
  */
 static ni_compat_netdev_t *
-ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, const ni_hwaddr_t *hwaddr, const unsigned int *mtu)
+ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, const ni_hwaddr_t *hwaddr, const unsigned int *mtu, const int iftype)
 {
 	ni_compat_netdev_t *nd;
 
 	nd = ni_compat_netdev_by_name(nda, ifname);
 
-	if (!nd)
+	/* We only apply the iftype if it hasn't been applied before
+	   (to avoid overwriting netdevs created by bridge=..., vlan=... etc) */
+	if (nd && (nd->dev->link.type == NI_IFTYPE_UNKNOWN))
+		nd->dev->link.type = iftype;
+
+	if (!nd) {
 		nd = ni_compat_netdev_new(ifname);
 
+		/* Assume default NI_IFTYPE_ETHERNET for newly created netdevs */
+		nd->dev->link.type = iftype == NI_IFTYPE_UNKNOWN ?
+			NI_IFTYPE_ETHERNET : iftype;
+	}
+
 	if (ifname && nd && hwaddr) {
-		memcpy(nd->identify.hwaddr.data, hwaddr->data, hwaddr->len);
-		nd->identify.hwaddr.len = hwaddr->len;
-		nd->identify.hwaddr.type = hwaddr->type;
+		memcpy(nd->dev->link.hwaddr.data, hwaddr->data, hwaddr->len);
+		nd->dev->link.hwaddr.len = hwaddr->len;
+		nd->dev->link.hwaddr.type = hwaddr->type;
 	}
 
 	if (mtu) {
@@ -177,7 +187,7 @@ ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, 
 	char *names = ports;
 	char *next;
 
-	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL);
+	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL, NI_IFTYPE_BRIDGE);
 	nd->dev->link.type = NI_IFTYPE_BRIDGE;
 	bridge = ni_netdev_get_bridge(nd->dev);
 
@@ -209,7 +219,7 @@ ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, 
 		return FALSE;
 	}
 
-	nd = ni_dracut_cmdline_add_netdev(nda, vlanname, NULL, NULL);
+	nd = ni_dracut_cmdline_add_netdev(nda, vlanname, NULL, NULL, NI_IFTYPE_VLAN);
 	nd->dev->link.type = NI_IFTYPE_VLAN;
 	vlan = ni_netdev_get_vlan(nd->dev);
 
@@ -257,7 +267,7 @@ parse_ip1(ni_compat_netdev_array_t *nda, char *val)
 	if (ni_parse_uint_mapped(val, bootprotos, &bootproto))
 			return FALSE;
 
-	compat = ni_dracut_cmdline_add_netdev(nda, NULL, NULL, NULL);
+	compat = ni_dracut_cmdline_add_netdev(nda, NULL, NULL, NULL, NI_IFTYPE_UNKNOWN);
 
 	return ni_dracut_cmdline_parse_bootproto(compat, val);
 }
@@ -293,12 +303,12 @@ parse_ip2(ni_compat_netdev_array_t *nda, char *val, const char *ifname)
                         if (ni_link_address_parse(&lladdr, ARPHRD_ETHER, mac))
                                 return FALSE;
                 }
-		compat = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, &mtu_u32);
+		compat = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, &mtu_u32, NI_IFTYPE_UNKNOWN);
         } else {
 		if (ni_parse_uint_mapped(val, bootprotos, &bootproto))
 			return FALSE;
 
-		compat = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL);
+		compat = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL, NI_IFTYPE_UNKNOWN);
         }
 
 	return ni_dracut_cmdline_parse_bootproto(compat, val);
