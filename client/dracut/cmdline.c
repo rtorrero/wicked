@@ -36,6 +36,7 @@
 #include <wicked/bridge.h>
 #include <wicked/vlan.h>
 #include <wicked/bonding.h>
+#include <wicked/team.h>
 
 #include "cmdline.h"
 #include "client/wicked-client.h"
@@ -223,6 +224,42 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 	return nd;
 }
 
+/** FIXME: Syntax does not allow to specify team mode. It seems that the code is expected
+ * to check /etc/teamd/${teammaster}.conf
+ * Assuming activebackup for now
+ */
+static ni_compat_netdev_t *
+ni_dracut_cmdline_add_team(ni_compat_netdev_array_t *nda, const char *master, char *slaves)
+{
+	ni_team_t *team;
+	ni_team_port_t *port;
+	ni_compat_netdev_t *nd;
+
+	char *next;
+
+	nd = ni_dracut_cmdline_add_netdev(nda, master, NULL, NULL, NI_IFTYPE_TEAM);
+	team = ni_netdev_get_team(nd->dev);
+	ni_team_runner_init(&team->runner, NI_TEAM_RUNNER_ACTIVE_BACKUP);
+	//FIXME: After initialization, compat-suse.c does something else I don't quite understand CHECK IT
+
+	for (next = token_peek(slaves, ','); next; slaves = next, next = token_peek(slaves, ',')) {
+		++next;
+		token_next(slaves, ',');
+		if (!ni_netdev_name_is_valid(slaves)) {
+			ni_warn("rejecting suspect port name '%s'", slaves);
+			continue;
+		}
+		port = ni_team_port_new();
+		ni_netdev_ref_set_ifname(&port->device, slaves);
+		ni_team_port_array_append(&team->ports, port);
+	}
+	port = ni_team_port_new();
+	ni_netdev_ref_set_ifname(&port->device, slaves);
+	ni_team_port_array_append(&team->ports, port);
+
+	return nd;
+}
+
 static ni_compat_netdev_t *
 ni_dracut_cmdline_add_bond(ni_compat_netdev_array_t *nda, const char *bondname, char *slaves, const char *options, const unsigned int *mtu)
 {
@@ -244,6 +281,11 @@ ni_dracut_cmdline_add_bond(ni_compat_netdev_array_t *nda, const char *bondname, 
 		ni_bonding_add_slave(bonding, names);
 	}
 	ni_bonding_add_slave(bonding, names);
+
+	/**
+	 * FIXME: We need to workout the arp_ip_target param (substitute semicolon
+	 * for colon in sub-params
+	 **/
 	try_set_bonding_options(nd->dev, options);
 
 	return nd;
@@ -433,13 +475,13 @@ ni_dracut_cmdline_parse_opt_ip(ni_compat_netdev_array_t *nd, ni_var_t *param)
 	return TRUE;
 }
 
-/** Parse bonding configuration
+/** Parse bonding configuration applying default values when not provided
  * bond=<bondname>[:<bondslaves>:[:<options>[:<mtu>]]]
  */
 ni_bool_t
 ni_dracut_cmdline_parse_opt_bond(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
-	char *end;
+	char *next;
 	char *bonddname = "bond0";
 	char default_slaves[] = "eth0,eth1";
 	char *slaves = default_slaves;
@@ -451,18 +493,18 @@ ni_dracut_cmdline_parse_opt_bond(ni_compat_netdev_array_t *nda, ni_var_t *param)
 		goto add_bond;
 
 	bonddname = param->value;
-	if (!(end = token_next(bonddname, ':')))
+	if (!(next = token_next(bonddname, ':')))
 		goto add_bond;
 
-	slaves = end;
-	if (!(end = token_next(slaves, ':')))
+	slaves = next;
+	if (!(next = token_next(slaves, ':')))
 		goto add_bond;
 
-	opts = end;
-	if (!(end = token_next(opts, ':')))
+	opts = next;
+	if (!(next = token_next(opts, ':')))
 		goto add_bond;
 
-	mtu = end;
+	mtu = next;
 	if (ni_parse_uint(mtu, &mtu_u32, 10)) {
 		ni_error("cmdline: invalid mtu value\n");
 		return FALSE;
@@ -473,14 +515,20 @@ add_bond:
 }
 
 ni_bool_t
-ni_dracut_cmdline_parse_opt_team()
+ni_dracut_cmdline_parse_opt_team(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
-	return TRUE;
-}
+	char *next, *master, *slaves;
 
-ni_bool_t
-ni_dracut_parse_opt_team()
-{
+	if (ni_string_empty(param->value))
+		return FALSE;
+
+	master = param->value;
+	if (!(next = token_next(master, ':')))
+		return FALSE;
+	slaves = next;
+
+	ni_dracut_cmdline_add_team(nda, master, slaves);
+
 	return TRUE;
 }
 
