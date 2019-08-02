@@ -552,8 +552,28 @@ ni_dracut_cmdline_parse_opt_bridge(ni_compat_netdev_array_t *nda, ni_var_t *para
 }
 
 ni_bool_t
-ni_dracut_cmdline_parse_opt_ifname()
+ni_dracut_cmdline_parse_opt_ifname(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
+	char *mac, *ifname;
+	ni_hwaddr_t lladdr;
+	ni_compat_netdev_t *nd;
+
+	if (ni_string_empty(param->value))
+		return FALSE;
+
+	ifname = param->value;
+
+	if (!(mac = token_next(param->value, ':')))
+		return FALSE;
+
+	if (ni_link_address_parse(&lladdr, ARPHRD_ETHER, mac))
+		return FALSE;
+
+	nd = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL, NI_IFTYPE_UNKNOWN);
+	memcpy(nd->identify.hwaddr.data, lladdr.data, lladdr.len);
+	nd->dev->link.hwaddr.len = lladdr.len;
+	nd->dev->link.hwaddr.type = lladdr.type;
+
 	return TRUE;
 }
 
