@@ -35,6 +35,7 @@
 #include <wicked/types.h>
 #include <wicked/bridge.h>
 #include <wicked/vlan.h>
+#include <wicked/bonding.h>
 
 #include "cmdline.h"
 #include "client/wicked-client.h"
@@ -83,6 +84,49 @@ const char *
 ni_dracut_param_name(unsigned int *param)
 {
         return ni_format_uint_mapped(*param, dracut_params);
+}
+
+
+/** FIXME: This function was copied from compat-suse.c
+ * Decide if we can put it somewhere on a .h to be used on
+ * both places. bonding.c seems a reasonable place.
+ */
+static ni_bool_t
+try_set_bonding_options(ni_netdev_t *dev, const char *options)
+{
+	ni_string_array_t temp;
+	ni_bonding_t * bond;
+	unsigned int i;
+	ni_bool_t ret = TRUE;
+
+	if ((bond = ni_netdev_get_bonding(dev)) == NULL)
+		return FALSE;
+
+	ni_string_array_init(&temp);
+	ni_string_split(&temp, options, " \t", 0);
+	for (i = 0; i < temp.count; ++i) {
+		char *key = temp.data[i];
+		char *val = strchr(key, '=');
+
+		if (val != NULL)
+			*val++ = '\0';
+
+		if (!ni_string_len(key) || !ni_string_len(val)) {
+			ni_error("ifcfg-%s: Unable to parse bonding options '%s'",
+				dev->name, options);
+			ret = FALSE;
+			break;
+		}
+		if (!ni_bonding_set_option(bond, key, val)) {
+			ni_error("ifcfg-%s: Unable to parse bonding option: %s=%s",
+				dev->name, key, val);
+			ret = FALSE;
+			break;
+		}
+	}
+	ni_string_array_destroy(&temp);
+
+	return ret;
 }
 
 static ni_bool_t
@@ -180,6 +224,32 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 }
 
 static ni_compat_netdev_t *
+ni_dracut_cmdline_add_bond(ni_compat_netdev_array_t *nda, const char *bondname, char *slaves, const char *options, const unsigned int *mtu)
+{
+	ni_bonding_t *bonding;
+	ni_compat_netdev_t *nd;
+	char *names = slaves;
+	char *next;
+
+	nd = ni_dracut_cmdline_add_netdev(nda, bondname, NULL, mtu, NI_IFTYPE_BOND);
+	bonding = ni_netdev_get_bonding(nd->dev);
+
+	for (next = token_peek(names, ','); next; names = next, next = token_peek(names, ',')) {
+		++next;
+		token_next(names, ',');
+		if (!ni_netdev_name_is_valid(names)) {
+			ni_warn("rejecting suspect port name '%s'", names);
+			continue;
+		}
+		ni_bonding_add_slave(bonding, names);
+	}
+	ni_bonding_add_slave(bonding, names);
+	try_set_bonding_options(nd->dev, options);
+
+	return nd;
+}
+
+static ni_compat_netdev_t *
 ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, char *ports)
 {
 	ni_bridge_t *bridge;
@@ -188,7 +258,6 @@ ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, 
 	char *next;
 
 	nd = ni_dracut_cmdline_add_netdev(nda, brname, NULL, NULL, NI_IFTYPE_BRIDGE);
-	nd->dev->link.type = NI_IFTYPE_BRIDGE;
 	bridge = ni_netdev_get_bridge(nd->dev);
 
 	for (next = token_peek(names, ','); next; names = next, next = token_peek(names, ',')) {
@@ -220,7 +289,6 @@ ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, 
 	}
 
 	nd = ni_dracut_cmdline_add_netdev(nda, vlanname, NULL, NULL, NI_IFTYPE_VLAN);
-	nd->dev->link.type = NI_IFTYPE_VLAN;
 	vlan = ni_netdev_get_vlan(nd->dev);
 
 	if (!strcmp(vlanname, etherdev)) {
@@ -365,10 +433,43 @@ ni_dracut_cmdline_parse_opt_ip(ni_compat_netdev_array_t *nd, ni_var_t *param)
 	return TRUE;
 }
 
+/** Parse bonding configuration
+ * bond=<bondname>[:<bondslaves>:[:<options>[:<mtu>]]]
+ */
 ni_bool_t
-ni_dracut_cmdline_parse_opt_bond(ni_compat_netdev_array_t *nd, ni_var_t *param)
+ni_dracut_cmdline_parse_opt_bond(ni_compat_netdev_array_t *nda, ni_var_t *param)
 {
+	char *end;
+	char *bonddname = "bond0";
+	char default_slaves[] = "eth0,eth1";
+	char *slaves = default_slaves;
+	char *opts = "mode=balance-rr";
+	char *mtu = NULL;
+	unsigned int mtu_u32;
 
+	if (ni_string_empty(param->value))
+		goto add_bond;
+
+	bonddname = param->value;
+	if (!(end = token_next(bonddname, ':')))
+		goto add_bond;
+
+	slaves = end;
+	if (!(end = token_next(slaves, ':')))
+		goto add_bond;
+
+	opts = end;
+	if (!(end = token_next(opts, ':')))
+		goto add_bond;
+
+	mtu = end;
+	if (ni_parse_uint(mtu, &mtu_u32, 10)) {
+		ni_error("cmdline: invalid mtu value\n");
+		return FALSE;
+	}
+
+add_bond:
+	return NULL != ni_dracut_cmdline_add_bond(nda, bonddname, slaves, opts, &mtu_u32);
 }
 
 ni_bool_t
@@ -563,7 +664,7 @@ ni_dracut_cmdline_line_parse(ni_var_array_t *params, ni_stringbuf_t *line)
 			continue;
 		name = xstrdup(param.string);
 		value = strchr(name, '=');
-		if (*value != '\0') {
+		if (value && *value != '\0') {
 			*value = '\0';
 			++value;
 		} else {
