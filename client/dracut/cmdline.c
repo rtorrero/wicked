@@ -18,6 +18,7 @@
  *
  *	Authors:
  *		Rubén Torrero Marijnissen <rtorreromarijnissen@suse.com>
+ *		Marius Tomaschewski <mt@suse.de>
  *
  */
 
