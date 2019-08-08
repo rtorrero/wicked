@@ -28,19 +28,23 @@
 
 #include <ctype.h>
 #include <net/if_arp.h>
+#include <sys/time.h>
 
 #include <wicked/util.h>
+#include <wicked/address.h>
+#include <wicked/types.h>
 #include <wicked/ipv4.h>
+#include <wicked/ipv6.h>
 #include <wicked/xml.h>
 #include <wicked/netinfo.h>
-#include <wicked/types.h>
 #include <wicked/bridge.h>
 #include <wicked/vlan.h>
 #include <wicked/bonding.h>
 #include <wicked/team.h>
 
 #include "cmdline.h"
-#include "client/wicked-client.h"
+#include "../wicked-client.h"
+#include "../../src/client/ifconfig.h"
 #include "buffer.h"
 
 static const ni_intmap_t        dracut_params[] = {
@@ -201,7 +205,6 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 	   (to avoid overwriting netdevs created by bridge=..., vlan=... etc) */
 	if (nd && (nd->dev->link.type == NI_IFTYPE_UNKNOWN))
 		nd->dev->link.type = iftype;
-
 	if (!nd) {
 		nd = ni_compat_netdev_new(ifname);
 
@@ -320,7 +323,7 @@ ni_dracut_cmdline_add_bridge(ni_compat_netdev_array_t *nda, const char *brname, 
 static ni_compat_netdev_t *
 ni_dracut_cmdline_add_vlan(ni_compat_netdev_array_t *nda, const char *vlanname, const char *etherdev)
 {
-	char *vlantag;
+	const char *vlantag;
 	ni_vlan_t *vlan;
 	ni_compat_netdev_t *nd;
 	unsigned int tag = 0;
@@ -431,13 +434,69 @@ parse_ip2(ni_compat_netdev_array_t *nda, char *val, const char *ifname)
 static ni_bool_t
 parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 {
-	ni_sockaddr_t addr;
+	ni_sockaddr_t addr, netmask;
+	ni_ipv4_devinfo_t *ipv4;
+	ni_ipv6_devinfo_t *ipv6;
+	ni_compat_netdev_t *nd;
+	char *params[9] = {NULL};
+	const char *next, *peer, *mask, *gateway, *hostname, *ifname, *bootproto, *mtu, *hwaddr;
+	unsigned int i, offset = 0, mtu_u32;
+	unsigned int prefixlen = ~0U;
+	ni_hwaddr_t lladdr;
 
-	if (ni_sockaddr_parse(&addr, client_ip, AF_UNSPEC))
+	if (!ni_sockaddr_prefix_parse(client_ip, &addr, &prefixlen))
 		return FALSE;
 
-	// ni_var_array_set(params, "client-ip", ni_sockaddr_print(&addr));
-	// ni_var_array_set(params, "TODO", val);
+	if (ni_string_empty(val))
+		return FALSE;
+
+	for (i = 0; i < 9; ++i) {
+		params[i] = val;
+		if (!token_peek(val, ':'))
+			break;
+
+		val = token_next(val, ':');
+	}
+
+	if (!ni_sockaddr_parse(&netmask, params[2], AF_INET)) {
+		peer = params[offset++];
+	} else {
+		peer = NULL;
+	}
+
+	gateway = i >= offset ? params[offset++] : NULL;
+	mask = i >= offset ? params[offset++] : NULL;
+	hostname = i >= offset ? params[offset++] : NULL;
+	ifname = i >= offset ? params[offset++] : NULL;
+	bootproto = i >= offset ? params[offset++] : NULL;
+	mtu = hwaddr = i >= offset ? params[offset++] : NULL;
+	hwaddr = i >= offset ? params[offset++] : hwaddr;
+
+	if (params[offset] == NULL)
+		nd = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL, NI_IFTYPE_UNKNOWN);
+
+	else if (mtu && !ni_parse_uint(mtu, &mtu_u32, 10)) {
+		if (!ni_link_address_parse(&lladdr, ARPHRD_ETHER, hwaddr))
+			nd = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, &mtu_u32, NI_IFTYPE_UNKNOWN);
+		else
+			nd = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, &mtu_u32, NI_IFTYPE_UNKNOWN);
+	} else {
+		if (hwaddr && !ni_link_address_parse(&lladdr, ARPHRD_ETHER, hwaddr)) {
+			nd = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, NULL, NI_IFTYPE_UNKNOWN);
+		}
+	}
+
+	if (addr.ss_family == AF_INET) {
+		ipv4 = ni_netdev_get_ipv4(nd->dev);
+		ni_tristate_set(&ipv4->conf.enabled, TRUE);
+		ni_tristate_set(&ipv4->conf.arp_verify, TRUE);
+	} else if (addr.ss_family == AF_INET6) {
+		ipv6 = ni_netdev_get_ipv6(nd->dev);
+		ni_tristate_set(&ipv6->conf.enabled, TRUE);
+	}
+
+	ni_address_new(addr.ss_family, prefixlen, &addr, &nd->dev->addrs);
+
 	return TRUE;
 }
 
