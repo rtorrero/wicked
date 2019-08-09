@@ -29,6 +29,7 @@
 #include <ctype.h>
 #include <net/if_arp.h>
 #include <sys/time.h>
+#include <netlink/netlink.h>
 
 #include <wicked/util.h>
 #include <wicked/address.h>
@@ -445,6 +446,8 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 	unsigned int peer_prefixlen = ~0U;
 	unsigned int client_prefixlen = ~0U;
 	ni_hwaddr_t lladdr;
+	ni_route_t *rp;
+	ni_route_nexthop_t *nh;
 
 	if (ni_string_empty(val))
 		return FALSE;
@@ -482,6 +485,17 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 
 	client_prefixlen = ni_sockaddr_netmask_bits(&netmask);
 
+	// Read default gw
+	if (!(rp = ni_route_new()))
+		return FALSE;
+
+	if (ni_sockaddr_parse(&rp->nh.gateway, gateway, AF_UNSPEC) < 0)
+		return FALSE;
+
+	// Set to 'default' destination
+	rp->destination.ss_family = rp->family;
+	rp->prefixlen = 0;
+
 	if (params[offset] == NULL)
 		nd = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL, NI_IFTYPE_UNKNOWN);
 
@@ -506,6 +520,28 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 	}
 
 	ni_address_new(client_addr.ss_family, client_prefixlen, &client_addr, &nd->dev->addrs);
+
+
+	/* we need either ifname or gateway... */
+	for (nh = &rp->nh; nh; nh = nh->next) {
+		if (!nh->device.name && ifname) {
+			ni_string_dup(&nh->device.name, ifname);
+		}
+		if (!rp->nh.device.name && rp->nh.gateway.ss_family == AF_UNSPEC) {
+			return FALSE;
+		}
+	}
+
+	/* apply defaults when needed */
+	if (rp->type == RTN_UNSPEC)
+		rp->type = RTN_UNICAST;
+	if (rp->table == RT_TABLE_UNSPEC)
+		rp->table = RT_TABLE_MAIN;
+	if (rp->protocol == RTPROT_UNSPEC)
+		rp->protocol = RTPROT_BOOT;
+	// Add the route to the dev
+	if (!ni_route_tables_add_route(&nd->dev->routes, rp))
+		return FALSE;
 
 	return TRUE;
 }
