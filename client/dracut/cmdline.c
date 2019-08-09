@@ -228,7 +228,8 @@ ni_dracut_cmdline_add_netdev(ni_compat_netdev_array_t *nda, const char *ifname, 
 	return nd;
 }
 
-/** FIXME: Syntax does not allow to specify team mode. It seems that the code is expected
+/** FIXME: Syntax does not allow
+ *  to specify team mode. It seems that the code is expected
  * to check /etc/teamd/${teammaster}.conf
  * Assuming activebackup for now
  */
@@ -434,18 +435,16 @@ parse_ip2(ni_compat_netdev_array_t *nda, char *val, const char *ifname)
 static ni_bool_t
 parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 {
-	ni_sockaddr_t addr, netmask;
+	ni_sockaddr_t peer_addr, netmask, client_addr, gateway_addr;
 	ni_ipv4_devinfo_t *ipv4;
 	ni_ipv6_devinfo_t *ipv6;
 	ni_compat_netdev_t *nd;
 	char *params[9] = {NULL};
 	const char *next, *peer, *mask, *gateway, *hostname, *ifname, *bootproto, *mtu, *hwaddr;
 	unsigned int i, offset = 0, mtu_u32;
-	unsigned int prefixlen = ~0U;
+	unsigned int peer_prefixlen = ~0U;
+	unsigned int client_prefixlen = ~0U;
 	ni_hwaddr_t lladdr;
-
-	if (!ni_sockaddr_prefix_parse(client_ip, &addr, &prefixlen))
-		return FALSE;
 
 	if (ni_string_empty(val))
 		return FALSE;
@@ -458,12 +457,7 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 		val = token_next(val, ':');
 	}
 
-	if (!ni_sockaddr_parse(&netmask, params[2], AF_INET)) {
-		peer = params[offset++];
-	} else {
-		peer = NULL;
-	}
-
+	peer = i >= offset ? params[offset++] : NULL;
 	gateway = i >= offset ? params[offset++] : NULL;
 	mask = i >= offset ? params[offset++] : NULL;
 	hostname = i >= offset ? params[offset++] : NULL;
@@ -471,6 +465,22 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 	bootproto = i >= offset ? params[offset++] : NULL;
 	mtu = hwaddr = i >= offset ? params[offset++] : NULL;
 	hwaddr = i >= offset ? params[offset++] : hwaddr;
+
+
+	if (!client_ip || ni_sockaddr_parse(&client_addr, client_ip, AF_UNSPEC) == -1)
+		return FALSE;
+
+	// Peer is optional, we continue even if it's missing.
+	if (peer)
+		ni_sockaddr_prefix_parse(peer, &peer_addr, &peer_prefixlen);
+
+	if (!gateway || ni_sockaddr_parse(&gateway_addr, gateway, AF_UNSPEC) == -1)
+		return FALSE;
+
+	if (ni_sockaddr_parse(&netmask, mask, AF_INET) == -1)
+		return FALSE;
+
+	client_prefixlen = ni_sockaddr_netmask_bits(&netmask);
 
 	if (params[offset] == NULL)
 		nd = ni_dracut_cmdline_add_netdev(nda, ifname, NULL, NULL, NI_IFTYPE_UNKNOWN);
@@ -486,16 +496,16 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 		}
 	}
 
-	if (addr.ss_family == AF_INET) {
+	if (client_addr.ss_family == AF_INET) {
 		ipv4 = ni_netdev_get_ipv4(nd->dev);
 		ni_tristate_set(&ipv4->conf.enabled, TRUE);
 		ni_tristate_set(&ipv4->conf.arp_verify, TRUE);
-	} else if (addr.ss_family == AF_INET6) {
+	} else if (client_addr.ss_family == AF_INET6) {
 		ipv6 = ni_netdev_get_ipv6(nd->dev);
 		ni_tristate_set(&ipv6->conf.enabled, TRUE);
 	}
 
-	ni_address_new(addr.ss_family, prefixlen, &addr, &nd->dev->addrs);
+	ni_address_new(client_addr.ss_family, client_prefixlen, &client_addr, &nd->dev->addrs);
 
 	return TRUE;
 }
