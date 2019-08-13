@@ -137,7 +137,7 @@ try_set_bonding_options(ni_netdev_t *dev, const char *options)
 }
 
 static ni_bool_t
-ni_dracut_cmdline_add_bootproto_dhcp(ni_compat_netdev_t *nd, char *val)
+ni_dracut_cmdline_add_bootproto_dhcp(ni_compat_netdev_t *nd, const char *val)
 {
         ni_ipv4_devinfo_t *ipv4;
 
@@ -159,7 +159,7 @@ ni_dracut_cmdline_add_bootproto_dhcp(ni_compat_netdev_t *nd, char *val)
 }
 
 static ni_bool_t
-ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
+ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, const char *val)
 {
 	unsigned int bootproto_type;
 
@@ -172,12 +172,12 @@ ni_dracut_cmdline_parse_bootproto(ni_compat_netdev_t *nd, char *val)
 		ni_warn("Nothing to do here, bootproto is off/none\n");
 		break;
 
+	case NI_DRACUT_BOOTPROTO_ON:
+	case NI_DRACUT_BOOTPROTO_ANY:
 	case NI_DRACUT_BOOTPROTO_DHCP:
 		return ni_dracut_cmdline_add_bootproto_dhcp(nd, val);
 		break;
 
-	case NI_DRACUT_BOOTPROTO_ON:
-	case NI_DRACUT_BOOTPROTO_ANY:
 	case NI_DRACUT_BOOTPROTO_DHCP6:
 	case NI_DRACUT_BOOTPROTO_AUTO6:
 	case NI_DRACUT_BOOTPROTO_IBFT:
@@ -498,6 +498,12 @@ parse_ip3(ni_compat_netdev_array_t *nda, char *val, const char *client_ip)
 			nd = ni_dracut_cmdline_add_netdev(nda, ifname, &lladdr, NULL, NI_IFTYPE_UNKNOWN);
 		}
 	}
+
+	// Add the bootproto
+	ni_dracut_cmdline_parse_bootproto(nd, bootproto);
+
+	// Add the hostname
+	ni_string_dup(&nd->dhcp4.hostname, hostname);
 
 	// Add the address
 	if (client_addr.ss_family == AF_INET) {
