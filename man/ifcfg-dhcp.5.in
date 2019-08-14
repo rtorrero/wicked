@@ -66,7 +66,7 @@ cause that a DHCP server ignores the fqdn option requests completely.
 .BR DHCLIENT_SET_DEFAULT_ROUTE\  { yes* | no }
 Should the DHCP client set a default route (default Gateway)?
 When multiple copies of DHCP clients run, it would make sense that only
-one of them does it. 
+one of them does it.
 .TP
 .BR DHCLIENT_ROUTE_PRIORITY
 This option allows to set a metric/priority for DHCPv4 routes. Default is 0.
@@ -154,7 +154,7 @@ or the MTU option have higher precedence.
 Request broadcast responses from dhcp-server.
 
 The default behaviour is to not request broadcast responses for any type
-of devices except of Infiniband, where it is enabled by default and not 
+of devices except of Infiniband, where it is enabled by default and not
 possible to disable.
 
 .SH DHCPv6 Specific Variables
@@ -186,6 +186,13 @@ Request IP address as well as other configuration.
 This option allows the DHCPv6 client to indicate its desire to accept
 rapid commit leases using two-packet exchange (solicitation, lease ack)
 instead of the four packet (solicitation, offer, request, lease ack).
+.TP
+.BR DHCLIENT6_ADDRESS_LENGTH
+Permits to specify explicit prefix-length to use for the DHCPv6 address,
+e.g. 64 to use address as 2001:db8::1/64 or 80 for 2001:db8::1/80.
+When 0 or unspecified (default), prefix-length of the smallest on-link
+prefix (highest /length number) in the IPv6 router advertisement matching
+the address is used or 128 (see also rfc5942).
 .TP
 .BR DHCLIENT6_SET_HOSTNAME\  { yes | no* }
 Should the DHCPv6 client set the hostname?
@@ -222,7 +229,7 @@ When disabled, the DHCP server may append it's update domain the host-
 name (e.g. 'foo.bar' -> 'foo.bar.example.net').
 .TP
 .BR DHCLIENT6_CLIENT_ID
-This option allows to manually specify a client identifier (DUID) as a colon 
+This option allows to manually specify a client identifier (DUID) as a colon
 separated hex byte string for DHCPv6. It disables the default behavior to
 maintain the client-id automatically, see wicked-config(5) and `wicked duid --help`
 for more details.
