@@ -336,7 +336,7 @@ ni_do_test(const char *caller, int argc, char **argv)
 	} else
 	if (ni_string_eq(cmd, "dhcp4")) {
 		status = ni_do_test_dhcp4(program, argc - optind, argv + optind);
-	} else 
+	} else
 	if (ni_string_eq(cmd, "dhcp6")) {
 		status = ni_do_test_dhcp6(program, argc - optind, argv + optind);
 	} else {
@@ -348,4 +348,3 @@ cleanup:
 	ni_string_free(&program);
 	return status;
 }
-
