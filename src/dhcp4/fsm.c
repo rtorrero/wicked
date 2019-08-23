@@ -939,7 +939,7 @@ ni_dhcp4_recover_lease(ni_dhcp4_device_t *dev)
 	if (dev->lease)
 		return 1;
 
-	lease = ni_addrconf_lease_file_read(dev->ifname, NI_ADDRCONF_DHCP, AF_INET);
+	lease = ni_addrconf_lease_file_read(dev->ifname, NI_ADDRCONF_DHCP, AF_INET, NULL);
 	if (!lease)
 		return -1;
 

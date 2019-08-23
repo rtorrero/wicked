@@ -41,6 +41,8 @@
 #include <wicked/system.h>
 #include <wicked/types.h>
 #include <wicked/fsm.h>
+#include <wicked/util.h>
+#include <wicked/addrconf.h>
 
 #include "client/ifconfig.h"
 
@@ -64,10 +66,18 @@ static char *ifname_test;
 static int
 do_test_dhcp4(int argc, char *const argv[], char *const envp[])
 {
-	char *tester_argv[] = {"test", "dhcp4", ifname_test};
-	int tester_argc = 3;
-	printf("about to test dhcp4 on interface %s \n", ifname_test);
+	char *tester_argv[] = {"test", "dhcp4", "--output", "lease.tmp", ifname_test};
+	int tester_argc = 5;
+	ni_addrconf_lease_t *lease;
+
 	int rv = ni_do_test("wicked", tester_argc, tester_argv);
+
+	lease = ni_addrconf_lease_file_read(ifname_test, NI_ADDRCONF_DHCP, AF_INET, "lease.tmp");
+
+	//if (!ni_string_empty(lease->dhcp4.root_path))
+	if (!ni_string_empty(lease->dhcp4.sender_hwa))
+		rv = 1;
+
 	return rv;
 }
 
@@ -1010,6 +1020,8 @@ ni_do_bootstrap(int argc, char **argv)
 	ni_buffer_t buf;
 	int rv, cc, i;
 	ni_fsm_t *fsm;
+	//ni_string_array_t ifnames = NI_STRING_ARRAY_INIT;
+	//ni_var_array_t lease_attrs = NI_VAR_ARRAY_INIT;
 
 	/* Allocate fsm and set to read-only */
 	fsm = ni_fsm_new();
@@ -1027,30 +1039,39 @@ ni_do_bootstrap(int argc, char **argv)
 		return -1;
 	}
 
-	shellcmd = ni_shellcmd_parse("wicked");
-	if (!shellcmd)
-		return -1;
-
-	pi = ni_process_new(shellcmd);
-	ni_shellcmd_free(shellcmd);
-	if (!pi)
-		return -1;
-
-	pi->exec = do_test_dhcp4;
-	ni_buffer_init_dynamic(&buf, 1024);
 	for (i = 0; i < fsm->workers.count; ++i) {
 		ni_ifworker_t *w = fsm->workers.data[i];
-		ni_netdev_t *dev = w->device;
-		printf("I've got interface: %s\n", w->name);
-	}
-	printf("about to call dhcp_test\n");
-	ifname_test = "lab40";
-	rv = ni_process_run_and_capture_output(pi, &buf);
 
-	/*while ((cc = ni_buffer_getc(&buf)) != EOF) {
-		printf("%c", cc);
-		printf("am i here?");
-	}*/
+		ifname_test = w->name;
+
+		shellcmd = ni_shellcmd_parse("wicked");
+		if (!shellcmd)
+			return -1;
+
+		pi = ni_process_new(shellcmd);
+		ni_shellcmd_free(shellcmd);
+		if (!pi)
+			return -1;
+		pi->exec = do_test_dhcp4;
+		//ni_buffer_init_dynamic(&buf, 1024);
+		//rv = ni_process_run_and_capture_output(pi, &buf);
+		rv = ni_process_run(pi);
+		printf("Return value for interface %s was %d \n", ifname_test, rv);
+		//char *attr_name = ni_buffer_getc(&buf);
+		//ni_stringbuf_t *strbuff;
+
+
+		/*while ((cc = ni_buffer_getc(&buf)) != EOF) {
+			if (cc != '\n' && cc !=)
+				ni_stringbuf_putc(strbuff, cc);
+			else
+				ni_stringbuf_
+				ni_buffer_get
+			printf("%c", cc);
+			//printf("am i here?");
+		}*/
+	}
+
 
 	printf("return value for ni_process_run was : %d \n", rv);
 	return 0;

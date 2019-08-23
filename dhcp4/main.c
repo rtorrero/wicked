@@ -307,7 +307,7 @@ dhcp4_recover_lease(ni_netdev_t *ifp)
 	if (afi->lease[NI_ADDRCONF_DHCP] != NULL)
 		return;
 
-	lease = ni_addrconf_lease_file_read(ifp->name, NI_ADDRCONF_DHCP, afi->family);
+	lease = ni_addrconf_lease_file_read(ifp->name, NI_ADDRCONF_DHCP, afi->family, NULL);
 	if (lease == NULL)
 		return;
 
@@ -666,4 +666,3 @@ dhcp4_recover_state(const char *filename)
 	 * and kickstart those. */
 	ni_dhcp4_restart_leases();
 }
-

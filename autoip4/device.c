@@ -224,7 +224,7 @@ ni_autoip_acquire(ni_autoip_device_t *dev, const ni_auto4_request_t *request)
 			dev->ifname, ni_uuid_print(&request->uuid));
 
 	ni_autoip_device_set_lease(dev, ni_addrconf_lease_file_read(dev->ifname,
-					NI_ADDRCONF_AUTOCONF, AF_INET));
+					NI_ADDRCONF_AUTOCONF, AF_INET, NULL));
 	if (ni_autoip_device_start(dev) < 0)
 		return -1;
 	return 1;
@@ -273,4 +273,3 @@ ni_autoip_release(ni_autoip_device_t *dev, const ni_uuid_t *req_uuid)
 	dev->fsm.timer = ni_timer_register(0, ni_autoip_start_release, dev);
 	return 1;
 }
-

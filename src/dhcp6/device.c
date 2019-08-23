@@ -826,7 +826,7 @@ ni_dhcp6_recover_lease(ni_dhcp6_device_t *dev)
 	if (!dev)
 		return NULL;
 
-	lease = ni_addrconf_lease_file_read(dev->ifname, NI_ADDRCONF_DHCP, AF_INET6);
+	lease = ni_addrconf_lease_file_read(dev->ifname, NI_ADDRCONF_DHCP, AF_INET6, NULL);
 	if (!ni_addrconf_lease_is_valid(lease) ||
 	    lease->type != NI_ADDRCONF_DHCP || lease->family != AF_INET6) {
 		ni_addrconf_lease_free(lease);
@@ -1518,4 +1518,3 @@ ni_dhcp6_supported(const ni_netdev_t *ifp)
 	}
 	return TRUE;
 }
-

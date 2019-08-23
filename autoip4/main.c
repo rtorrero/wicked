@@ -205,7 +205,7 @@ autoip4_recover_state(ni_netdev_t *ifp)
 	if (afi->lease[NI_ADDRCONF_AUTOCONF] != NULL)
 		return;
 
-	lease = ni_addrconf_lease_file_read(ifp->name, NI_ADDRCONF_AUTOCONF, afi->family);
+	lease = ni_addrconf_lease_file_read(ifp->name, NI_ADDRCONF_AUTOCONF, afi->family, NULL);
 	if (lease == NULL)
 		return;
 

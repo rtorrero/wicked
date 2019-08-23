@@ -1343,14 +1343,17 @@ failed:
  * Read a lease from a file
  */
 ni_addrconf_lease_t *
-ni_addrconf_lease_file_read(const char *ifname, int type, int family)
+ni_addrconf_lease_file_read(const char *ifname, int type, int family, const char *leasefile)
 {
 	ni_addrconf_lease_t *lease = NULL;
 	xml_node_t *xml = NULL, *lnode;
 	char *filename = NULL;
 	FILE *fp;
 
-	if (!__ni_addrconf_lease_file_path(&filename,
+	if (leasefile)
+		filename = leasefile;
+
+	else if (!__ni_addrconf_lease_file_path(&filename,
 				ni_config_statedir(),
 				ifname, type, family)) {
 		ni_error("Unable to construct lease file name: %m");
@@ -1464,4 +1467,3 @@ ni_addrconf_lease_file_exists(const char *ifname, int type, int family)
 	ni_string_free(&filename);
 	return FALSE;
 }
-
