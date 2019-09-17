@@ -726,4 +726,3 @@ ni_process_stop_signal(const ni_process_t *pi)
 {
 	return ni_process_stopped(pi) ? WSTOPSIG(pi->status) : NI_PROCESS_FAILURE;
 }
-

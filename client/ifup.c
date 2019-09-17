@@ -50,6 +50,7 @@
 #include "ifstatus.h"
 #include "process.h"
 #include "main.h"
+//#include "tester.h"
 #include "dhcp4/tester.h"
 #include "buffer.h"
 
@@ -64,11 +65,28 @@ static char *ifname_test;
 static int
 do_test_dhcp4(int argc, char *const argv[], char *const envp[])
 {
-	char *tester_argv[] = {"test", "dhcp4", ifname_test};
-	int tester_argc = 3;
-	printf("about to test dhcp4 on interface %s \n", ifname_test);
-	int rv = ni_do_test("wicked", tester_argc, tester_argv);
-	return rv;
+	ni_dhcp4_tester_t *tester;
+	int rv;
+
+	tester = ni_dhcp4_tester_init();
+
+	if (tester == NULL) {
+		fprintf(stderr, "Error: %s: unable to initialize dhcp4 tester\n");
+		return EXIT_FAILURE;
+	}
+
+	tester->ifname = "lab40";
+	//tester->broadcast = NI_TRISTATE_DEFAULT;
+	//tester->outfmt = NI_DHCP4_TESTER_OUT_LEASE_XML;
+	//tester->output = "stdout";
+	//tester->request = NULL;
+	tester->timeout = 5;
+
+	rv = ni_dhcp4_tester_run(tester);
+	fprintf(stdout, "\0");
+	fflush(stdout);
+//	return rv;
+	return EXIT_SUCCESS;
 }
 
 static xml_node_t *
@@ -1037,20 +1055,24 @@ ni_do_bootstrap(int argc, char **argv)
 		return -1;
 
 	pi->exec = do_test_dhcp4;
-	ni_buffer_init_dynamic(&buf, 1024);
+	ni_string_array_append(&pi->argv, "test");
+	//ni_string_array_append(&pi->argv, "dhcp4");
+	ni_string_array_append(&pi->argv, "lab40");
+	ni_buffer_init_dynamic(&buf, 3);
 	for (i = 0; i < fsm->workers.count; ++i) {
 		ni_ifworker_t *w = fsm->workers.data[i];
 		ni_netdev_t *dev = w->device;
 		printf("I've got interface: %s\n", w->name);
 	}
-	printf("about to call dhcp_test\n");
 	ifname_test = "lab40";
-	rv = ni_process_run_and_capture_output(pi, &buf);
+	//rv = ni_process_run_and_capture_output(pi, &buf);
+	ni_process_run_and_wait(pi);
+	ni_process_free(pi);
+	printf("Return value was: %d\n", i);
 
-	/*while ((cc = ni_buffer_getc(&buf)) != EOF) {
+	while ((cc = ni_buffer_getc(&buf)) != EOF) {
 		printf("%c", cc);
-		printf("am i here?");
-	}*/
+	}
 
 	printf("return value for ni_process_run was : %d \n", rv);
 	return 0;
