@@ -1046,8 +1046,12 @@ int
 ni_do_arp(const char *caller, int argc, char **argv)
 {
 	enum {
-		OPT_QUIET, OPT_VERBOSE, OPT_HELP, OPT_INTERVAL,
-		OPT_VERIFY, OPT_NOTIFY,
+		OPT_QUIET	= 'q',
+		OPT_VERBOSE	= 'v',
+		OPT_HELP	= 'h',
+		OPT_INTERVAL	= 'i',
+		OPT_VERIFY	= 'V',
+		OPT_NOTIFY	= 'n',
 	};
 	static struct option      options[] = {
 		{ "help",         no_argument,       NULL, OPT_HELP        },
@@ -1079,7 +1083,7 @@ ni_do_arp(const char *caller, int argc, char **argv)
 	}
 
 	optind = 1;
-	while ((opt = getopt_long(argc, argv, "+", options, NULL)) != EOF) {
+	while ((opt = getopt_long(argc, argv, "+hqvV:n:i:", options, NULL)) != EOF) {
 		switch (opt) {
 		case OPT_HELP:
 			status = NI_WICKED_RC_SUCCESS;
@@ -1091,20 +1095,20 @@ ni_do_arp(const char *caller, int argc, char **argv)
 				"  %s [options] <action> [action options] <ifname> <IP address>\n"
 				"\n"
 				"Common options:\n"
-				"  --help\n"
+				"  --help, -h\n"
 				"      Show this help text.\n"
-				"  --quiet\n"
+				"  --quiet, -q\n"
 				"      Return exit status only\n"
-				"  --verbose\n"
+				"  --verbose, -v\n"
 				"      Show a result info (default)\n"
 				"\n"
 				"Deprecated options:\n"
-				"  --verify <count>\n"
+				"  --verify, -V <count>\n"
 				"      Verify IP for duplicates on the network (DAD);\n"
 				"      Returns 4, when duplicate IP address exists.\n"
-				"  --notify <count>\n"
+				"  --notify, -n <count>\n"
 				"      Notify about IP address use (gratuitous ARP)\n"
-				"  --interval <msec>\n"
+				"  --interval, -i <msec>\n"
 				"      Packet sending interval in msec\n"
 				"\n"
 				"Actions:\n"
@@ -1223,4 +1227,3 @@ cleanup:
 	ni_string_free(&command);
 	return status;
 }
-

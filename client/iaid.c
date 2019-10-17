@@ -462,4 +462,3 @@ cleanup:
 	ni_string_free(&program);
 	return status;
 }
-
