@@ -342,6 +342,7 @@ AC_CONFIG_FILES([
 	dhcp4/Makefile
 	dhcp6/Makefile
 	autoip4/Makefile
+	useless/Makefile
 	man/Makefile
 	etc/Makefile
 	extensions/Makefile

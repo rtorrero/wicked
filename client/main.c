@@ -56,6 +56,7 @@
 #include "ifreload.h"
 #include "ifstatus.h"
 #include "main.h"
+#include "useless.h"
 
 enum {
 	OPT_HELP,
@@ -335,6 +336,9 @@ main(int argc, char **argv)
 	} else
 	if (!strcmp(cmd, "bootstrap")) {
 		 status = ni_do_ifup(argc - optind, argv + optind);
+	} else
+	if (!strcmp(cmd, "uselesscall")) {
+		status = ni_do_useless(argc - optind, argv + optind);
 	} else {
 		fprintf(stderr, "Unsupported command %s\n", cmd);
 		goto usage;

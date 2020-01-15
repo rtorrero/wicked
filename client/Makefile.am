@@ -68,6 +68,7 @@ wicked_SOURCES			= \
 	main.c			\
 	nanny.c			\
 	reachable.c		\
+	useless.c		\
 	tester.c
 
 noinst_HEADERS			= \
@@ -79,6 +80,7 @@ noinst_HEADERS			= \
 	main.h			\
 	reachable.h		\
 	read-config.h		\
+	useless.h		\
 	wicked-client.h
 
 install-data-local:

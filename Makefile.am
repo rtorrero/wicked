@@ -6,7 +6,8 @@ MAINTAINERCLEANFILES		= Makefile.in aclocal.m4 config.guess config.*   \
 				  $(DIST_ARCHIVES) $(PACKAGE)-*.tar.bz2
 
 SUBDIRS				= include src util schema client server nanny \
-				  autoip4 dhcp4 dhcp6 etc extensions man doc testing
+				  autoip4 dhcp4 dhcp6 etc extensions man doc \
+				  testing useless
 
 
 pkgconfig_DATA			= wicked.pc
